@@ -1,0 +1,20 @@
+{
+  "name": "sec-financial-history",
+  "version": "1.0.0",
+  "description": "Aplikacja desktopowa do analizy fundamentalnej spółek z SEC",
+  "main": "dist/main.js",
+  "author": "Paweł Lisik",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "start": "npm run build && electron ."
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "^44.3.0",
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "yahoo-finance2": "^4.0.2"
+  }
+}

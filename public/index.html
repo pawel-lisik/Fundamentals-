@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SEC Financial Data (20 Years)</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Lewa strona: Główna zawartość -->
+        <div class="left-container"> 
+            <div class="main-content">
+                <div class="header">
+                    <div class="top-row">
+                        <h1 id="company-title">Fundamental Analysis SEC Fetcher</h1>
+                        <div class="period-toggle" id="period-toggle">
+                            <button class="toggle-btn active" data-period="annual">Annual</button>
+                            <button class="toggle-btn" data-period="quarterly">Quarterly</button>
+                        </div>
+                        <button id="hide-watchlist-btn" style="background: none; border: none; cursor: pointer;"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" style="transform: scaleX(1.2);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-panel-right"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></svg></button>
+                    </div>
+
+                    <div class="toolbar">                        
+                        <div class="toolbar-bottom" id="sub-tabs-container">
+                            <div class="tabs" id="statement-tabs">
+                                <button class="tab-btn active" data-tab="income">Income Statement</button>
+                                <button class="tab-btn" data-tab="balance">Balance Sheet</button>
+                                <button class="tab-btn" data-tab="cashflow">Cash Flow</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="loading" style="display: none;">Pobieranie i analizowanie danych XBRL z SEC EDGAR...</div>
+                <div id="no-data-msg" style="color: var(--text-secondary); text-align: center; padding: 40px 0;">Wybierz spółkę z listy obserwowanych po prawej stronie, aby załadować jej dane fundamentalne.</div>            
+
+                
+
+                <div class="chart-wrapper" id="chart-wrapper" style="display: none;">
+                    <canvas id="financial-chart"></canvas>
+                </div>
+
+                <!-- NOWY PANEL OVERVIEW INFO -->
+                <div id="overview-info" style="display: none; padding: 20px; margin-top: 15px; justify-content: space-around;">
+                    
+                    <div class="stat-box" style="text-align: center;">
+                        <div style="font-size: 13px; color: #aaa; margin-bottom: 5px;">Sektor</div>
+                        <!-- Zmniejszona czcionka dla długich nazw sektorów -->
+                        <div id="ov-sector" style="font-size: 18px; font-weight: bold; color: #fff;">-</div>
+                    </div>
+                    
+                    <div class="stat-box" style="text-align: center;">
+                        <div style="font-size: 13px; color: #aaa; margin-bottom: 5px;">Kapitalizacja rynkowa</div>
+                        <div id="ov-market-cap" style="font-size: 22px; font-weight: bold; color: #fff;">-</div>
+                    </div>
+                    <div class="stat-box" style="text-align: center;">
+                        <div style="font-size: 13px; color: #aaa; margin-bottom: 5px;">Obecne P/E</div>
+                        <div id="ov-pe" style="font-size: 22px; font-weight: bold; color: #fff;">-</div>
+                    </div>
+                    <div class="stat-box" style="text-align: center;">
+                        <div style="font-size: 13px; color: #aaa; margin-bottom: 5px;">Obecne PEG</div>
+                        <div id="ov-peg" style="font-size: 22px; font-weight: bold; color: #fff;">-</div>
+                    </div>
+
+                    <div class="stat-box" style="text-align: center;">
+                        <!-- DODANE ID DO ETYKIETY -->
+                        <div id="ov-dividend-label" style="font-size: 13px; color: #aaa; margin-bottom: 5px;">Następna dywidenda</div>
+                        <div id="ov-dividend-date" style="font-size: 22px; font-weight: bold; color: #fff;">-</div>
+                    </div>
+                </div>
+
+                    <!-- NOWA SEKCJA: Wiadomości Yahoo -->
+
+                <div id="overview-news-container" style="display: none; margin-top: 25px; padding-bottom: 20px;">
+                    <h3 style="margin: 0 0 15px 0; font-size: 18px; color: var(--text-primary); border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+                        Najnowsze wiadomości
+                    </h3>
+                    <!-- ZMIENIONY KONTENER: Grid zamiast Flex -->
+                    <div id="overview-news-list" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
+                        <!-- Tu wygenerują się kafelki z newsami -->
+                    </div>
+                </div>
+                
+                <div class="table-wrapper">
+                    <div id="table-container"></div>
+                </div>
+            </div>
+
+            <div class="main-tabs" id="main-tabs">
+                <button class="main-tab-btn active" data-maintab="overview">
+                    <i class="fa-solid fa-table-cells-large"></i> 
+                    <span>Overview</span>
+                </button>
+                <button class="main-tab-btn" data-maintab="statements">
+                    <i class="fa-solid fa-file-invoice-dollar"></i> 
+                    <span>Financial Statements</span>
+                </button>
+                <button class="main-tab-btn" data-maintab="indicators">
+                    <i class="fa-solid fa-chart-line"></i> 
+                    <span>Indicators</span>
+                </button>
+                <button class="main-tab-btn" data-maintab="dividends">
+                    <i class="fa-solid fa-money-bills"></i> 
+                    <span>Dividends</span>
+                </button>
+                <button class="main-tab-btn" data-maintab="macro">
+                    <i class="fa-solid fa-globe"></i> 
+                    <span>Macroeconomics</span>
+                </button>
+
+            </div>
+        </div>
+
+
+        <!-- Prawa strona: Lista obserwowanych -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>Obserwowane</h2>
+                <div class="controls">
+                    <input type="text" id="ticker-input" placeholder="Ticker (np. AAPL)" value="AAPL">
+                    
+                    <button id="add-to-watchlist-btn" class="secondary-btn">+ Do obserwowanych</button>
+                </div>
+        
+            </div>
+            <div id="watchlist-container" class="watchlist-container">
+                <!-- Tu dynamicznie pojawią się spółki -->
+            </div>
+        </div>
+    </div>
+
+
+    <script src="../dist/renderer.js"></script>
+</body>
+</html>

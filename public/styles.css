@@ -1,0 +1,446 @@
+:root {
+    --bg-color: rgb(236, 236, 236);
+    --panel-bg: #1e222d;
+    --text-primary: #d1d4dc;
+    --text-secondary: #787b86;
+    --border-color: #2a2e39;
+    --accent-color: #2962ff;
+    --accent-hover: #1e53e5;
+    --sidebar-bg: rgba(255, 255, 255, 0.5);
+    --menu-border: #c7c7c7;
+    --active-tab-bg: rgba(200, 200, 200, 0.2);
+}
+
+.header {
+    margin-bottom: 20px;
+}
+
+.top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+h1 { font-size: 20px; margin: 0; }
+
+.controls input {
+    background-color: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 8px 12px;
+    border-radius: 4px;
+    outline: none;
+}
+
+.controls button {
+    background-color: var(--accent-color);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.controls button:hover { background-color: var(--accent-hover); }
+
+/* Nowe style: Zakładki i Toggle */
+.toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
+}
+
+.tabs button, .period-toggle button {
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
+    padding: 8px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    font-weight: 500;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.tabs button:hover, .period-toggle button:hover {
+    color: var(--text-primary);
+}
+
+.tabs button.active {
+    background-color: var(--panel-bg);
+    color: var(--accent-color);
+    border-bottom: 2px solid var(--accent-color);
+    border-radius: 4px 4px 0 0;
+}
+
+.period-toggle {
+    background-color: var(--panel-bg);
+    border-radius: 6px;
+    padding: 2px;
+    display: flex;
+}
+
+.period-toggle button.active {
+    background-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* --- ZAKTUALIZOWANY TOOLBAR --- */
+.toolbar {
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 15px;
+}
+
+.toolbar-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 10px;
+}
+
+.toolbar-bottom {
+    display: flex;
+    align-items: center;
+    padding-bottom: 10px;
+    padding-top: 5px;
+}
+
+/* Główne zakładki (Statements, Indicators, Dividends) */
+.main-tabs {
+    display: flex;
+    border-top: 1px solid var(--menu-border);
+    background: var(--sidebar-bg);
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 78%;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    z-index: 100;
+}
+
+.main-tab-btn {
+    display: flex;
+    flex: 1;
+    flex-direction: column; /* Układa ikonę i napis pionowo (jedno pod drugim) */
+    align-items: center;    /* Środkuje ikonę i napis w poziomie */
+    justify-content: center;/* Środkuje zawartość w pionie */
+    gap: 6px;               /* Odstęp między ikoną a napisem */
+    padding: 5px;     /* Odpowiedni padding dla pionowego przycisku */
+    min-width: 90px;        /* Opcjonalnie: stała minimalna szerokość, by przyciski były równe */
+    margin: 4px;
+    /* Reszta Twoich obecnych stylów przycisku */
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+/* 🔝 Styl dla DUŻEJ ikonki */
+.main-tab-btn i {
+    font-size: 20px;        /* Zwiększ rozmiar ikonki wedle uznania (np. 20px - 24px) */
+}
+
+/* 🔤 Styl dla MAŁEGO napisu pod spodem */
+.main-tab-btn span {
+    font-size: 11px;        /* Zmniejszenie rozmiaru czcionki tekstu */
+    font-weight: 500;       /* Opcjonalnie: delikatniejsza grubość fontu dla czytelności */
+    letter-spacing: 0.3px;  /* Opcjonalnie: lekki rozstrzał liter przy małym foncie */
+    text-align: center;
+}
+
+.main-tab-btn.active {
+    background-color: var(--active-tab-bg);
+    color: var(--accent-color);
+    border-radius: 6px;
+}
+
+
+/* Tabele */
+.table-wrapper {
+    flex-grow: 1;
+    overflow-x: auto;
+    overflow-y: auto;
+    background-color: #ffffff; /* Białe tło raportu */
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0 0 10px 0; /* Lekki margines górny i dolny dla oddechu */
+}
+
+.tv-table { 
+    width: 100%; 
+    border-collapse: collapse; 
+    white-space: nowrap; 
+    color: #000000; /* Czarny tekst jak w raporcie */
+    font-size: 14px;
+}
+
+/* Brak pionowych i poziomych linii obramowania dla standardowych komórek */
+.tv-table th, .tv-table td { 
+    padding: 6px 16px; /* Ciaśniejszy padding pionowy jak w druku */
+    text-align: right; 
+    border: none; 
+}
+
+/* Nagłówki kolumn (lata) */
+.tv-table th { 
+    background-color: #ffffff; 
+    color: #000000; 
+    font-weight: bold; 
+    border-bottom: 1px solid #000000; /* Pojedyncza linia pod latami */
+    position: sticky; 
+    top: 0; 
+    z-index: 10; 
+}
+
+/* Zamrożona kolumna z nazwami metryk */
+.tv-table .sticky-col { 
+    position: sticky; 
+    left: 0; 
+    background-color: #ffffff; 
+    text-align: left; 
+    font-weight: normal; 
+    z-index: 20; 
+}
+
+.tv-table th.sticky-col { 
+    background-color: #ffffff; 
+    z-index: 30; 
+    border-bottom: 1px solid #000000;
+}
+
+/* Subtelny hover */
+.tv-table tr:hover { 
+    background-color: #f7f9fc; 
+}
+.tv-table tr:hover .sticky-col { 
+    background-color: #f7f9fc; 
+}
+
+/* --- HIERARCHIA RAPORTU KORPORACYJNEGO --- */
+
+/* Puste wiersze oddzielające sekcje */
+.row-empty {
+    height: 16px;
+}
+.row-empty td {
+    padding: 0;
+}
+
+/* Nagłówki sekcji (np. Operating expenses) */
+.row-header-text {
+    font-weight: normal;
+    color: #000000;
+}
+
+/* Sub-metryki (np. Research and development) z wcięciem */
+.row-sub {
+    padding-left: 36px !important; 
+    color: #333333;
+}
+
+/* Wiersze z podsumowaniem (np. Gross profit, Net income) */
+.row-total {
+    font-weight: bold;
+}
+.row-total td {
+    border-top: 1px solid #000000; /* Czarna linia nad sumą, kluczowy element wizualny ze zrzutu ekranu */
+}
+
+
+
+
+.chart-wrapper {
+    background-color: none;
+    border: none;
+    padding: 15px;
+    margin-bottom: 20px;
+    height: 75vh;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+
+
+
+
+
+
+
+/* Layout główny aplikacji */
+/* Layout główny aplikacji */
+body {
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif;
+    margin: 0;
+    padding: 0; /* Padding dajemy tylko do głównego kontenera */
+    height: 100vh;
+    overflow: hidden; /* Blokujemy główny suwak okna przeglądarki */
+}
+
+.app-container {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden; /* Zapobiega rozpychaniu układu poza ekran */
+}
+.left-container {
+    display: flex;
+    flex-direction: column;
+    flex: 1; /* Wypełnia całą wolną przestrzeń po lewej stronie */
+    min-width: 0; /* Kluczowe przy flexboxie, zapobiega ucinaniu treści */
+    overflow: hidden; /* Zapobiega rozpychaniu układu poza ekran */
+}
+
+.main-content {
+    flex: 1; /* Wypełnia całą wolną przestrzeń po prawej stronie */
+    min-width: 0; /* Kluczowe przy flexboxie, zapobiega ucinaniu treści */
+    padding: 20px;
+    overflow-y: auto; /* Włącza suwak tylko w sekcji z wykresem i tabelami */
+    display: block; /* Zmiana z flex na block pozwala poprawnie obliczyć wysokość całej zawartości */
+    height: 100vh;
+    box-sizing: border-box;
+    position: relative;
+    z-index: 0; /* Zapewnia, że główna zawartość jest pod paskiem bocznym */
+    padding-bottom: 75px;
+}
+
+/* Przycisk dodawania do obserwowanych */
+.secondary-btn {
+    background-color: var(--panel-bg);
+    border: 1px solid var(--border-color) !important;
+    color: var(--text-primary) !important;
+    margin-left: 8px;
+}
+.secondary-btn:hover {
+    background-color: var(--border-color) !important;
+}
+
+/* Pasek boczny (Watchlist) TERAZ EDYTOWAŁEM */
+.sidebar {
+    width: 22%;
+    background-color: #1a1e26;
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+
+    background: var(--sidebar-bg);
+
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+
+    border-left: 1px solid var(--menu-border);
+    z-index: 100;
+
+}
+
+.sidebar-header {
+    padding: 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+.sidebar-header h2 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--text-primary);
+}
+
+.watchlist-container {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+/* Element listy obserwowanych */
+.wl-item {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    margin-bottom: 4px;
+}
+.wl-item:hover {
+    background-color: var(--panel-bg);
+}
+
+/* Zastępcze logo z inicjałem */
+.wl-logo {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2962ff, #1e53e5);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 16px;
+    flex-shrink: 0;
+    margin-right: 12px;
+}
+
+/* Środkowa kolumna (Ticker i nazwa) */
+.wl-info {
+    flex-grow: 1;
+    overflow: hidden;
+}
+.wl-ticker {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+.wl-name {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Prawa kolumna (Cena i zmiana) */
+.wl-price-container {
+    text-align: right;
+}
+.wl-price {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+.wl-change {
+    font-size: 12px;
+    font-weight: 500;
+}
+.wl-change.positive { color: #00c853; }
+.wl-change.negative { color: #ff5252; }
+
+
+.sidebar-hidden #sidebar {
+    display: none;
+}
+.sidebar-hidden #main-tabs {
+    width: 100%;
+}
+
