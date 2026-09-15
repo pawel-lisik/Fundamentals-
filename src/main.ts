@@ -201,6 +201,7 @@ ipcMain.handle('get-yahoo-quote', async (event, ticker: string) => {
             marketCap: quote.marketCap || null,
             dividendDate: rawDivDate ? new Date(rawDivDate).toISOString() : null, // NOWE: Przekazujemy jako tekst ISO
             targetPrice: summary?.financialData?.targetMeanPrice || summary?.financialData?.targetMedianPrice || null,
+            description: summary?.assetProfile?.longBusinessSummary || '',
         };
     } catch (e) {
         console.error("Błąd pobierania danych z Yahoo dla:", ticker, e);

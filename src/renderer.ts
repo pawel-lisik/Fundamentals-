@@ -421,6 +421,20 @@ function renderData() {
             updateReturnUI('ov-sec-return-10y', calculateReturn(10, sectorPriceData || []));
         }
 
+        let description = document.getElementById('ov-description');
+        if (description) {            
+            // Aktualizujemy tekst, jeśli mamy dane z Yahoo
+            if (currentQuoteInfo && currentQuoteInfo.description) {
+                description.textContent = currentQuoteInfo.description;
+                description.style.display = 'block';
+            } else if (description) {
+                description.style.display = 'none'; // Ukryj box, jeśli dla tej spółki brakuje opisu
+            }
+        }
+
+
+
+
         // --- RENDEROWANIE WIADOMOŚCI ---
 
         const newsList = document.getElementById('overview-news-list')!;
