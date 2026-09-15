@@ -1,12 +1,12 @@
 :root {
     --bg-color: rgb(236, 236, 236);
-    --panel-bg: #1e222d;
-    --text-primary: #d1d4dc;
-    --text-secondary: #787b86;
-    --border-color: #2a2e39;
+    --panel-bg: red;
+    --text-primary: #000000;
+    --text-secondary: #808080;
+    --border-color: #cccccc;
     --accent-color: #2962ff;
     --accent-hover: #1e53e5;
-    --sidebar-bg: rgba(255, 255, 255, 0.5);
+    --sidebar-bg: rgba(255, 255, 255, 0.50);
     --menu-border: #c7c7c7;
     --active-tab-bg: rgba(200, 200, 200, 0.2);
 }

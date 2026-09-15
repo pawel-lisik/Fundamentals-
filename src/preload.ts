@@ -5,5 +5,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     fetchWatchlistQuotes: (tickers: string[]) => ipcRenderer.invoke('fetch-watchlist-quotes', tickers),
     getHistoricalPrices: (ticker: string) => ipcRenderer.invoke('get-historical-prices', ticker),
     getYahooQuote: (ticker: string) => ipcRenderer.invoke('get-yahoo-quote', ticker), 
-    getCompanyNews: (ticker: string) => ipcRenderer.invoke('get-company-news', ticker)
+    getCompanyNews: (ticker: string) => ipcRenderer.invoke('get-company-news', ticker),
+    getSectorHistoricalPrices: (sector: string) => ipcRenderer.invoke('get-sector-historical-prices', sector)
 });

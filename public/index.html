@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SEC Financial Data (20 Years)</title>
+    <title>Fundamentals</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -44,49 +44,80 @@
                 </div>
 
                 <!-- NOWY PANEL OVERVIEW INFO -->
-                <div id="overview-info" style="display: none; padding: 20px; margin-top: 15px; justify-content: space-around;">
-                    
-                    <div class="stat-box" style="text-align: center;">
-                        <div style="font-size: 13px; color: #aaa; margin-bottom: 5px;">Sektor</div>
-                        <!-- Zmniejszona czcionka dla długich nazw sektorów -->
-                        <div id="ov-sector" style="font-size: 18px; font-weight: bold; color: #fff;">-</div>
+                <div id="overview-info-container" style="display: none;">
+                    <div id="overview-info" style="display: flex; padding: 20px; margin-top: 15px; justify-content: space-around;">
+                        
+                        <div class="stat-box" style="text-align: center;">
+                            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 5px;">Sektor</div>
+                            <!-- Zmniejszona czcionka dla długich nazw sektorów -->
+                            <div id="ov-sector" style="font-size: 18px; font-weight: bold; color: var(--text-primary);">-</div>
+                        </div>
+                        
+                        <div class="stat-box" style="text-align: center;">
+                            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 5px;">Kapitalizacja rynkowa</div>
+                            <div id="ov-market-cap" style="font-size: 22px; font-weight: bold; color: var(--text-primary);">-</div>
+                        </div>
+                        <div class="stat-box" style="text-align: center;">
+                            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 5px;">Obecne P/E</div>
+                            <div id="ov-pe" style="font-size: 22px; font-weight: bold; color: var(--text-primary);">-</div>
+                        </div>
+                        <div class="stat-box" style="text-align: center;">
+                            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 5px;">Obecne PEG</div>
+                            <div id="ov-peg" style="font-size: 22px; font-weight: bold; color: var(--text-primary);">-</div>
+                        </div>
+
+                        <div class="stat-item">
+                            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 5px;">Target Price</div>
+                            <div class="stat-value" id="ov-target-price">--</div>
+                        </div>
+
+                        <div class="stat-box" style="text-align: center;">
+                            <!-- DODANE ID DO ETYKIETY -->
+                            <div id="ov-dividend-label" style="font-size: 13px; color: var(--text-secondary); margin-bottom: 5px;">Następna dywidenda</div>
+                            <div id="ov-dividend-date" style="font-size: 22px; font-weight: bold; color: var(--text-primary);">-</div>
+                        </div>
                     </div>
-                    
-                    <div class="stat-box" style="text-align: center;">
-                        <div style="font-size: 13px; color: #aaa; margin-bottom: 5px;">Kapitalizacja rynkowa</div>
-                        <div id="ov-market-cap" style="font-size: 22px; font-weight: bold; color: #fff;">-</div>
-                    </div>
-                    <div class="stat-box" style="text-align: center;">
-                        <div style="font-size: 13px; color: #aaa; margin-bottom: 5px;">Obecne P/E</div>
-                        <div id="ov-pe" style="font-size: 22px; font-weight: bold; color: #fff;">-</div>
-                    </div>
-                    <div class="stat-box" style="text-align: center;">
-                        <div style="font-size: 13px; color: #aaa; margin-bottom: 5px;">Obecne PEG</div>
-                        <div id="ov-peg" style="font-size: 22px; font-weight: bold; color: #fff;">-</div>
+                    <h3>Return Rates</h3>
+                    <div class="returns-container" style="display: grid; grid-template-columns: 80px repeat(5, 1fr); gap: 12px; margin-top: 20px; align-items: center; background: var(--panel-bg); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color);">
+                        <!-- Nagłówki -->
+                        <div style="font-weight: bold; color: var(--text-secondary); font-size: 13px;">Zwrot</div>
+                        <div class="stat-label" style="text-align: right;">6 Mies.</div>
+                        <div class="stat-label" style="text-align: right;">1 Rok</div>
+                        <div class="stat-label" style="text-align: right;">3 Lata</div>
+                        <div class="stat-label" style="text-align: right;">5 Lat</div>
+                        <div class="stat-label" style="text-align: right;">10 Lat</div>
+                        
+                        <!-- Wiersz: Spółka -->
+                        <div style="font-weight: 600; color: var(--text-primary); font-size: 14px;">Spółka</div>
+                        <div class="stat-value" id="ov-return-6m" style="text-align: right; font-size: 15px;">--</div>
+                        <div class="stat-value" id="ov-return-1y" style="text-align: right; font-size: 15px;">--</div>
+                        <div class="stat-value" id="ov-return-3y" style="text-align: right; font-size: 15px;">--</div>
+                        <div class="stat-value" id="ov-return-5y" style="text-align: right; font-size: 15px;">--</div>
+                        <div class="stat-value" id="ov-return-10y" style="text-align: right; font-size: 15px;">--</div>
+
+                        <!-- Wiersz: Sektor -->
+                        <div style="font-weight: 600; color: var(--text-secondary); font-size: 14px;">Sektor</div>
+                        <div class="stat-value" id="ov-sec-return-6m" style="text-align: right; font-size: 14px;">--</div>
+                        <div class="stat-value" id="ov-sec-return-1y" style="text-align: right; font-size: 14px;">--</div>
+                        <div class="stat-value" id="ov-sec-return-3y" style="text-align: right; font-size: 14px;">--</div>
+                        <div class="stat-value" id="ov-sec-return-5y" style="text-align: right; font-size: 14px;">--</div>
+                        <div class="stat-value" id="ov-sec-return-10y" style="text-align: right; font-size: 14px;">--</div>
                     </div>
 
-                    <div class="stat-box" style="text-align: center;">
-                        <!-- DODANE ID DO ETYKIETY -->
-                        <div id="ov-dividend-label" style="font-size: 13px; color: #aaa; margin-bottom: 5px;">Następna dywidenda</div>
-                        <div id="ov-dividend-date" style="font-size: 22px; font-weight: bold; color: #fff;">-</div>
+                        <!-- NOWA SEKCJA: Wiadomości Yahoo -->
+
+                    <div id="overview-news-container" style="display: block; margin-top: 25px; padding-bottom: 20px;">
+                        <h3 style="margin: 0 0 15px 0; font-size: 18px; color: var(--text-primary); border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+                            Latest News
+                        </h3>
+                        <!-- ZMIENIONY KONTENER: Grid zamiast Flex -->
+                        <div id="overview-news-list" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
+                            <!-- Tu wygenerują się kafelki z newsami -->
+                        </div>
                     </div>
                 </div>
 
-                    <!-- NOWA SEKCJA: Wiadomości Yahoo -->
-
-                <div id="overview-news-container" style="display: none; margin-top: 25px; padding-bottom: 20px;">
-                    <h3 style="margin: 0 0 15px 0; font-size: 18px; color: var(--text-primary); border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
-                        Najnowsze wiadomości
-                    </h3>
-                    <!-- ZMIENIONY KONTENER: Grid zamiast Flex -->
-                    <div id="overview-news-list" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
-                        <!-- Tu wygenerują się kafelki z newsami -->
-                    </div>
-                </div>
-                
-                <div class="table-wrapper">
-                    <div id="table-container"></div>
-                </div>
+                <div class="table-wrapper" id="table-container"></div>
             </div>
 
             <div class="main-tabs" id="main-tabs">

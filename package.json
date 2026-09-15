@@ -1,5 +1,5 @@
 {
-  "name": "sec-financial-history",
+  "name": "Fundamentals",
   "version": "1.0.0",
   "description": "Aplikacja desktopowa do analizy fundamentalnej spółek z SEC",
   "main": "dist/main.js",

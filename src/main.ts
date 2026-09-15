@@ -21,6 +21,39 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../public/index.html'));
 }
 
+async function fetchHistoricalData(ticker: string) {
+    const cleanTicker = ticker.toUpperCase();
+    if (priceHistoryCache[cleanTicker]) return priceHistoryCache[cleanTicker];
+
+    try {
+        const dzis = new Date();
+        const start = new Date();
+        start.setFullYear(dzis.getFullYear() - 20);
+
+        const response = await yahooFinance.chart(cleanTicker, {
+            period1: start.toISOString().split('T')[0],
+            period2: dzis.toISOString().split('T')[0],
+            interval: '1d'
+        });
+
+        const quotes = response?.quotes || [];
+        const sanitizedQuotes = quotes
+            .filter((q: any) => q.close !== null && q.close !== undefined)
+            .map((q: any) => ({
+                date: q.date,
+                close: q.close,
+                adjClose: q.adjclose ?? q.close,
+                volume: q.volume || 0
+            }));
+
+        priceHistoryCache[cleanTicker] = sanitizedQuotes;
+        return sanitizedQuotes;
+    } catch (e: any) {
+        console.error(`Błąd pobierania historii wykresu dla "${cleanTicker}":`, e.message || e);
+        return [];
+    }
+}
+
 app.whenReady().then(() => {
     createWindow();
 
@@ -70,6 +103,20 @@ ipcMain.handle('fetch-sec-data', async (event, ticker: string) => {
 // Pobieranie aktualnego kursu i nazwy spółki z Yahoo Finance
 // Handler 1: Podstawowe pobieranie kursu (jeśli go używasz)
 // Pamięć podręczna na historię cen (ticker -> tablica notowań)
+const SECTOR_ETF_MAP: Record<string, string> = {
+    "technology": "XLK",
+    "healthcare": "XLV",
+    "financial services": "XLF",
+    "consumer cyclical": "XLY",
+    "consumer defensive": "XLP",
+    "industrials": "XLI",
+    "energy": "XLE",
+    "utilities": "XLU",
+    "basic materials": "XLB",
+    "real estate": "XLRE",
+    "communication services": "XLC"
+};
+
 const priceHistoryCache: Record<string, any[]> = {};
 
 // 1. HURTOWE POBIERANIE DLA WATCHLISTY (Zamiast N zapytań w pętli -> tylko 1 zapytanie)
@@ -138,7 +185,7 @@ ipcMain.handle('get-yahoo-quote', async (event, ticker: string) => {
         const quote = await yahooFinance.quote(ticker);
         // Dodajemy 'calendarEvents', żeby upewnić się, że pobierzemy datę dywidendy
         const summary = await yahooFinance.quoteSummary(ticker, { 
-            modules: ['summaryDetail', 'defaultKeyStatistics', 'assetProfile', 'calendarEvents'] 
+            modules: ['summaryDetail', 'defaultKeyStatistics', 'assetProfile', 'calendarEvents', 'financialData'] 
         }).catch(() => null);
         
         // Data często zwracana jest jako obiekt Date, bezpiecznie rzutujemy ją na string dla frontendu
@@ -152,7 +199,8 @@ ipcMain.handle('get-yahoo-quote', async (event, ticker: string) => {
             peg: summary?.defaultKeyStatistics?.pegRatio || null,
             sector: summary?.assetProfile?.sector || 'Inne',
             marketCap: quote.marketCap || null,
-            dividendDate: rawDivDate ? new Date(rawDivDate).toISOString() : null // NOWE: Przekazujemy jako tekst ISO
+            dividendDate: rawDivDate ? new Date(rawDivDate).toISOString() : null, // NOWE: Przekazujemy jako tekst ISO
+            targetPrice: summary?.financialData?.targetMeanPrice || summary?.financialData?.targetMedianPrice || null,
         };
     } catch (e) {
         console.error("Błąd pobierania danych z Yahoo dla:", ticker, e);
@@ -200,4 +248,14 @@ ipcMain.handle('get-company-news', async (event, ticker: string) => {
         console.error("Błąd pobierania RSS dla:", ticker, e);
         return [];
     }
+});
+
+ipcMain.handle('get-sector-historical-prices', async (event, sectorName: string) => {
+    if (!sectorName) return [];
+    const normalized = sectorName.toLowerCase().trim();
+    const etfTicker = SECTOR_ETF_MAP[normalized];
+    
+    // Jeśli nie rozpoznamy sektora, zwracamy pustą tablicę
+    if (!etfTicker) return []; 
+    return fetchHistoricalData(etfTicker);
 });

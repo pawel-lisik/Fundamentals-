@@ -1,4 +1,5 @@
 declare const Chart: any;
+let sectorPriceData: any[] | null = null;
 
 let chartInstance: any = null; // Przechowuje instancję wykresu do jej niszczenia prz
 let peChartInstance: any = null;
@@ -183,7 +184,7 @@ async function renderWatchlist() {
             const initial = quote.name.charAt(0).toUpperCase();
 
             html += `
-            <div class="wl-item" data-ticker="${quote.ticker}" oncontextmenu="removeFromWatchlist('${quote.ticker}')" title="Kliknij prawym, aby usunąć">
+            <div style="border-bottom: 1px solid var(--border-color); border-radius: 0px" class="wl-item" data-ticker="${quote.ticker}" oncontextmenu="removeFromWatchlist('${quote.ticker}')" title="Kliknij prawym, aby usunąć">
                 <div class="wl-logo">${initial}</div>
                 <div class="wl-info">
                     <div class="wl-ticker">${quote.ticker}</div>
@@ -236,7 +237,6 @@ async function loadSecData(ticker: string) {
 
     document.getElementById('loading')!.style.display = 'block';
     document.getElementById('table-container')!.innerHTML = '';
-    document.getElementById('overview-info')!.style.display = 'none';
     document.getElementById('no-data-msg')!.style.display = 'none';
     
     const chartWrapper = document.getElementById('chart-wrapper');
@@ -255,6 +255,13 @@ async function loadSecData(ticker: string) {
         rawPriceData = priceRes;
         currentQuoteInfo = quoteRes;
         currentNews = newsRes;
+
+        // --- NOWE: POBIERANIE HISTORII SEKTORA (ETF) ---
+        if (currentQuoteInfo && currentQuoteInfo.sector) {
+            sectorPriceData = await (window as any).electronAPI.getSectorHistoricalPrices(currentQuoteInfo.sector);
+        } else {
+            sectorPriceData = null;
+        }
         
         renderData();
     } catch (error) {
@@ -285,16 +292,14 @@ function renderData() {
     }
 
     const tableContainer = document.getElementById('table-container')!;
-    const overviewInfo = document.getElementById('overview-info')!;
     const subTabs = document.getElementById('sub-tabs-container')!;
-    const newsContainer = document.getElementById('overview-news-container')!;
+    const overviewContainer = document.getElementById('overview-info-container')!;
 
     // Jeśli jesteśmy na tabie OVERVIEW
     if (currentMainTab === 'overview') {
         tableContainer.style.display = 'none';
         subTabs.style.display = 'none';
-        overviewInfo.style.display = 'flex';
-        newsContainer.style.display = 'block';
+        overviewContainer.style.display = 'block';
         
 
 
@@ -333,6 +338,89 @@ function renderData() {
             }
         }
 
+
+        // --- NOWE: CENA DOCELOWA Z PROCENTAMI ---
+        const targetPriceEl = document.getElementById('ov-target-price');
+        if (targetPriceEl) {
+            if (currentQuoteInfo.targetPrice && currentQuoteInfo.price) {
+                const target = currentQuoteInfo.targetPrice;
+                const current = currentQuoteInfo.price;
+                const diffPercent = ((target - current) / current) * 100;
+                
+                const sign = diffPercent >= 0 ? '+' : '';
+                const color = diffPercent >= 0 ? '#3CD859' : '#FF5252'; // Zielony dla wzrostu, czerwony dla spadku
+                
+                targetPriceEl.innerHTML = `$${target.toFixed(2)} <span style="color: ${color}; font-size: 13px; font-weight: 500; margin-left: 6px;">(${sign}${diffPercent.toFixed(2)}%)</span>`;
+            } else if (currentQuoteInfo.targetPrice) {
+                targetPriceEl.textContent = `$${currentQuoteInfo.targetPrice.toFixed(2)}`;
+            } else {
+                targetPriceEl.textContent = 'Brak';
+            }
+        }
+
+        // --- NOWE: STOPY ZWROTU Z OSTATNICH LAT ---
+        if (rawPriceData && rawPriceData.length > 0) {
+            // Używamy 'adjClose', żeby splity i dywidendy nie zaburzały wyniku z 10 lat
+            const latestQuote = rawPriceData[rawPriceData.length - 1];
+            const latestPrice = latestQuote.adjClose || latestQuote.close;
+            const latestDate = new Date(latestQuote.date);
+
+            // --- STOPY ZWROTU (SPÓŁKA VS SEKTOR) ---
+            const calculateReturn = (yearsAgo: number, dataArray: any[]) => {
+                if (!dataArray || dataArray.length === 0) return null;
+
+                const latestQuote = dataArray[dataArray.length - 1];
+                const latestPrice = latestQuote.adjClose || latestQuote.close;
+                const targetDate = new Date(latestQuote.date);
+
+                targetDate.setMonth(targetDate.getMonth() - Math.round(yearsAgo * 12));
+
+                const targetTime = targetDate.getTime();
+
+                let historicalPrice = null;
+                // Szukamy najbliższej ceny wstecz
+                for (let i = dataArray.length - 1; i >= 0; i--) {
+                    const quote = dataArray[i];
+                    if (new Date(quote.date).getTime() <= targetTime) {
+                        historicalPrice = quote.adjClose || quote.close;
+                        break;
+                    }
+                }
+
+                if (historicalPrice && latestPrice) {
+                    return ((latestPrice - historicalPrice) / historicalPrice) * 100;
+                }
+                return null;
+            };
+
+            const updateReturnUI = (id: string, val: number | null) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                if (val === null) {
+                    el.textContent = 'Brak';
+                    el.style.color = 'var(--text-secondary)';
+                } else {
+                    const sign = val >= 0 ? '+' : '';
+                    el.textContent = `${sign}${val.toFixed(2)}%`;
+                    el.style.color = val >= 0 ? '#3CD859' : '#FF5252';
+                }
+            };
+
+            // Obliczanie dla spółki
+            updateReturnUI('ov-return-6m', calculateReturn(0.5, rawPriceData || []));
+            updateReturnUI('ov-return-1y', calculateReturn(1, rawPriceData || []));
+            updateReturnUI('ov-return-3y', calculateReturn(3, rawPriceData || []));
+            updateReturnUI('ov-return-5y', calculateReturn(5, rawPriceData || []));
+            updateReturnUI('ov-return-10y', calculateReturn(10, rawPriceData || []));
+
+            // Obliczanie dla sektora
+            updateReturnUI('ov-sec-return-6m', calculateReturn(0.5, sectorPriceData || []));
+            updateReturnUI('ov-sec-return-1y', calculateReturn(1, sectorPriceData || []));
+            updateReturnUI('ov-sec-return-3y', calculateReturn(3, sectorPriceData || []));
+            updateReturnUI('ov-sec-return-5y', calculateReturn(5, sectorPriceData || []));
+            updateReturnUI('ov-sec-return-10y', calculateReturn(10, sectorPriceData || []));
+        }
+
         // --- RENDEROWANIE WIADOMOŚCI ---
 
         const newsList = document.getElementById('overview-news-list')!;
@@ -353,7 +441,7 @@ function renderData() {
                     : '';
 
                 newsHtml += `
-                <div style="background: var(--panel-bg); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column;">
+                <div style="background: none; padding: 16px; border-radius: 8px; border: none; display: flex; flex-direction: column;">
                     <a href="${item.link}" target="_blank" style="color: var(--text-primary); font-weight: 600; text-decoration: none; font-size: 15px; display: block; margin-bottom: 6px;">
                         ${item.title}
                     </a>
@@ -377,10 +465,9 @@ function renderData() {
     }
 
     // Dla pozostałych tabów (Statements, Indicators, itp.)
-    overviewInfo.style.display = 'none';
+    overviewContainer.style.display = 'none';
     tableContainer.style.display = 'block';
     subTabs.style.display = currentMainTab === 'statements' ? 'flex' : 'none';
-    newsContainer.style.display = 'none';
 
     const columns = currentPeriod === 'annual' ? getAnnualColumns() : getQuarterlyColumns();
     const metricsToUse = currentMainTab === 'statements' ? METRICS_MAP[currentTab] : METRICS_MAP[currentMainTab];
@@ -398,8 +485,6 @@ function renderData() {
     renderChart(incomeData, columns);
 }
 
-// ZAKTUALIZOWANE OBLICZENIA W processSecData
-// ZAKTUALIZOWANE OBLICZENIA W processSecData
 // ZAKTUALIZOWANE OBLICZENIA W processSecData
 function processSecData(metricsDef: MetricDef[], columns: string[]) {
     const result: any[] = [];
