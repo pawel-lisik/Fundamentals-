@@ -21,7 +21,7 @@ interface MetricDef {
 
 const METRICS_MAP: Record<string, MetricDef[]> = {
     income: [
-        { label: 'Revenue', tags: ['Revenues', 'NetRevenues', 'RevenuesNet', 'SalesRevenueNet', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'TotalRevenuesAndOtherIncome'], style: 'normal' },
+        { label: 'Revenue', tags: ['Revenues', 'NetRevenues', 'RevenuesNet', 'SalesRevenueNet', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'TotalRevenuesAndOtherIncome', 'SalesRevenueGoodsNet', 'SalesRevenueServicesNet', 'RevenueFromContractWithCustomerIncludingAssessedTax'], style: 'normal' },
         { label: 'Cost of revenue', tags: ['CostOfRevenue', 'CostOfGoodsAndServicesSold', 'CostOfGoodsSold'], style: 'normal' },
         { label: 'Gross profit', tags: ['GrossProfit', 'GrossMargin'], style: 'total' },
         { label: 'space1', tags: [], style: 'empty' },
@@ -117,6 +117,8 @@ function updateWatchlistButtonState() {
 document.addEventListener('DOMContentLoaded', () => {
     
     // 1. Główne zakładki (Statements, Indicators, Dividends)
+
+    // 1. Główne zakładki (Statements, Indicators, Dividends, Macro)
     document.querySelectorAll('.main-tab-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             document.querySelectorAll('.main-tab-btn').forEach(b => b.classList.remove('active'));
@@ -124,8 +126,27 @@ document.addEventListener('DOMContentLoaded', () => {
             target.classList.add('active');
             currentMainTab = target.dataset.maintab as 'overview' | 'statements' | 'indicators' | 'dividends' | 'macro';
             
-            document.getElementById('sub-tabs-container')!.style.display = currentMainTab === 'statements' ? 'flex' : 'none';
-            if (rawSecData) renderData();
+            // KONTROLA WIDOCZNOŚCI
+            const macroContainer = document.getElementById('macro-container');
+            const otherContainers = [
+                document.getElementById('overview-info-container'),
+                document.getElementById('table-container'),
+                document.getElementById('chart-wrapper'),
+                document.getElementById('sub-tabs-container'),
+                document.getElementById('no-data-msg')
+            ];
+
+            if (currentMainTab === 'macro') {
+                // Jeśli makro, ukrywamy widoki spółki i ładujemy panel kraju
+                otherContainers.forEach(el => { if(el) el.style.display = 'none'; });
+                if (macroContainer) macroContainer.style.display = 'block';
+                loadMacroTab(); // Nowa funkcja
+            } else {
+                // Wracamy do widoku spółki
+                if (macroContainer) macroContainer.style.display = 'none';
+                if (currentMainTab === 'statements') document.getElementById('sub-tabs-container')!.style.display = 'flex';
+                if (rawSecData) renderData(); 
+            }
         });
     });
 
@@ -377,16 +398,17 @@ function renderData() {
     const tableContainer = document.getElementById('table-container')!;
     const subTabs = document.getElementById('sub-tabs-container')!;
     const overviewContainer = document.getElementById('overview-info-container')!;
+    const periodToggle = document.getElementById('period-toggle')!;
 
     // Jeśli jesteśmy na tabie OVERVIEW
     if (currentMainTab === 'overview') {
         tableContainer.style.display = 'none';
         subTabs.style.display = 'none';
         overviewContainer.style.display = 'block';
-        
+        periodToggle.style.display = 'none';
 
 
-// Zaktualizuj panele statystyk na dole
+        // Zaktualizuj panele statystyk na dole
         if (currentQuoteInfo) {
 
 
@@ -742,7 +764,12 @@ function renderData() {
         renderChart(incomeData, columns);
         return;
     }
-
+    
+    if (currentMainTab === 'indicators' || currentMainTab === 'statements') {
+        periodToggle.style.display = 'block';
+    } else {
+        periodToggle.style.display = 'none';
+    }
     // Dla pozostałych tabów (Statements, Indicators, itp.)
     overviewContainer.style.display = 'none';
     tableContainer.style.display = 'block';
@@ -1413,4 +1440,108 @@ function formatCurrency(value: number, isEps: boolean = false): string {
     }
     
     return isNegative ? `(${formatted})` : formatted; // W raportach ujemne liczby często są w nawiasach, ale zostawiam standardowo lub z nawiasami
+}
+
+
+// ==========================================
+// --- NOWE: MODUŁ MAKROEKONOMII ---
+// ==========================================
+let currentMacroCountry = 'US';
+let currentMacroCurrency = 'USDPLN=X';
+let macroChartInstances: Record<string, any> = {};
+
+// Podłączamy przyciski nawigacyjne makro
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.macro-country-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.macro-country-btn').forEach(b => b.classList.remove('active'));
+            const target = e.currentTarget as HTMLButtonElement;
+            target.classList.add('active');
+            currentMacroCountry = target.dataset.country!;
+            loadMacroData(); // Ładuje tylko makro (bez walut, by było szybciej)
+        });
+    });
+
+    document.querySelectorAll('.macro-currency-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.macro-currency-btn').forEach(b => b.classList.remove('active'));
+            const target = e.currentTarget as HTMLButtonElement;
+            target.classList.add('active');
+            currentMacroCurrency = target.dataset.currency!;
+            loadMacroCurrency(); // Ładuje tylko walutę
+        });
+    });
+});
+
+// Główna funkcja ładująca pełny panel po kliknięciu w zakładkę
+function loadMacroTab() {
+    loadMacroCurrency();
+    loadMacroData();
+}
+
+async function loadMacroCurrency() {
+    try {
+        const prices = await (window as any).electronAPI.getHistoricalPrices(currentMacroCurrency);
+        if (prices && prices.length > 0) {
+            // POPRAWKA: Używamy new Date(), aby wymusić tekst niezależnie od tego co wyśle Yahoo, 
+            // a dopiero potem go tniemy split('T')
+            const labels = prices.map((p: any) => new Date(p.date).toISOString().split('T')[0]);
+            const data = prices.map((p: any) => p.close);
+            renderGenericChart('macro-currency-chart', currentMacroCurrency, labels, data, '#3CD859', false);
+        }
+    } catch (e) {
+        console.error("Błąd pobierania walut:", e);
+    }
+}
+
+async function loadMacroData() {
+    try {
+        const data = await (window as any).electronAPI.getMacroData(currentMacroCountry);
+        
+        if (data.RGDP) renderGenericChart('macro-gdp-chart', 'PKB (Real)', data.RGDP.dates, data.RGDP.values, '#2962FF', false);
+        
+        // ZMIEŃ TUTAJ ETYKIETĘ WYKRESU:
+        if (data.Y10YD) renderGenericChart('macro-rates-chart', 'Główna stopa procentowa (%)', data.Y10YD.dates, data.Y10YD.values, '#FFB300', false);
+        
+        if (data.CPI) renderGenericChart('macro-inflation-chart', 'Inflacja CPI r/r (%)', data.CPI.dates, data.CPI.values, '#FF5252', false);
+        if (data.URATE) renderGenericChart('macro-unemployment-chart', 'Bezrobocie (%)', data.URATE.dates, data.URATE.values, '#9C27B0', false);
+        if (data.EMP) renderGenericChart('macro-jobs-chart', 'Zmiana zatrudnienia', data.EMP.dates, data.EMP.values, '#00E676', true);
+
+    } catch (e) {
+        console.error("Błąd pobierania makroekonomii:", e);
+    }
+}
+
+// Uniwersalny render do obsługi 6 małych wykresów
+function renderGenericChart(canvasId: string, label: string, dates: string[], values: number[], color: string, isBar: boolean) {
+    const ctx = document.getElementById(canvasId) as HTMLCanvasElement;
+    if (!ctx) return;
+
+    if (macroChartInstances[canvasId]) {
+        macroChartInstances[canvasId].destroy();
+    }
+
+    macroChartInstances[canvasId] = new Chart(ctx, {
+        type: isBar ? 'bar' : 'line',
+        data: {
+            labels: dates,
+            datasets: [{
+                label: label,
+                data: values,
+                borderColor: color,
+                backgroundColor: isBar ? color : `${color}1A`, // 1A to przezroczystość w Hex
+                borderWidth: 2,
+                pointRadius: 0,
+                fill: !isBar,
+                tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { x: { ticks: { maxTicksLimit: 8 } } },
+            interaction: { mode: 'index', intersect: false }
+        }
+    });
 }

@@ -353,3 +353,102 @@ ipcMain.handle('get-similar-companies', async (event, ticker: string) => {
         return [];
     }
 });
+
+// --- NOWE: POBIERANIE DANYCH MAKRO Z ECONDB ---
+// --- NOWE: POBIERANIE DANYCH MAKRO Z FRED (Bank Rezerwy Federalnej) ---
+// --- NOWE: POBIERANIE DANYCH MAKRO Z FRED (Bank Rezerwy Federalnej) ---
+ipcMain.handle('get-macro-data', async (event, countryCode: string) => {
+    const results: any = {};
+    
+    // Mapowanie naszych wskaźników na identyfikatory baz FRED
+    const seriesMap: Record<string, Record<string, string>> = {
+        'US': {
+            'RGDP': 'GDPC1',             // PKB USA (Real Gross Domestic Product)
+            'Y10YD': 'FEDFUNDS',         // ZMIENIONE: Główna Stopa Procentowa USA (Fed Funds Rate)
+            'CPI': 'CPIAUCSL',           // Indeks CPI dla USA (Przeliczymy na inflację r/r)
+            'URATE': 'UNRATE',           // Bezrobocie USA
+            'EMP': 'PAYEMS'              // Zatrudnienie poza rolnictwem (Używane do "Nowych miejsc pracy")
+        },
+        'PL': {
+            'RGDP': 'CLVMNACSCAB1GQPL',  // PKB Polska
+            'Y10YD': 'IR3TIB01PLM156N',  // ZMIENIONE: Stopy krótkoterminowe PL (WIBOR 3M - najbliższe oficjalnym stopom NBP w bazie FRED)
+            'CPI': 'CPALTT01PLM659N',    // Gotowa Inflacja r/r dla Polski (%)
+            'URATE': 'LRHUTTTTPLM156S',  // Bezrobocie Polska
+            'EMP': 'LFEMTTTTPQM647S'     // Zatrudnienie Polska
+        }
+    };
+
+    const countrySeries = seriesMap[countryCode];
+    if (!countrySeries) return results;
+
+    const headers = { 
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+    };
+
+    // Pobieramy proste pliki CSV bezpośrednio z serwerów Rezerwy Federalnej
+    for (const [indicator, seriesId] of Object.entries(countrySeries)) {
+        try {
+            const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${seriesId}`;
+            const response = await fetch(url, { headers });
+            
+            if (response.ok) {
+                const text = await response.text();
+                // Dzielimy plik CSV na linie i pomijamy pierwszy wiersz (nagłówek)
+                const lines = text.trim().split('\n').slice(1); 
+                
+                let dates: string[] = [];
+                let values: number[] = [];
+
+                // Parsujemy plik CSV w locie
+                for (const line of lines) {
+                    const parts = line.split(',');
+                    if (parts.length === 2) {
+                        const val = parseFloat(parts[1]);
+                        if (!isNaN(val)) {
+                            dates.push(parts[0]);
+                            values.push(val);
+                        }
+                    }
+                }
+
+                // Obliczenia dla USA (ponieważ FRED zwraca tam surowe liczby, a my chcemy % i zmianę)
+                if (countryCode === 'US' && indicator === 'CPI') {
+                    // Obliczanie inflacji rok-do-roku
+                    const yoyDates = [];
+                    const yoyVals = [];
+                    for (let i = 12; i < values.length; i++) {
+                        yoyDates.push(dates[i]);
+                        const v = ((values[i] - values[i-12]) / values[i-12]) * 100;
+                        yoyVals.push(v);
+                    }
+                    dates = yoyDates;
+                    values = yoyVals;
+                } else if ((countryCode === 'US' || countryCode === 'PL') && indicator === 'EMP') {
+                    // Zmiana zatrudnienia miesiąc do miesiąca
+                    const diffDates = [];
+                    const diffVals = [];
+                    for (let i = 1; i < values.length; i++) {
+                        diffDates.push(dates[i]);
+                        diffVals.push(values[i] - values[i-1]); 
+                    }
+                    dates = diffDates;
+                    values = diffVals;
+                }
+
+                // Obcinamy do ostatnich 120 punktów (około 10 lat) i gotowe!
+                results[indicator] = {
+                    dates: dates.slice(-120),
+                    values: values.slice(-120)
+                };
+            } else {
+                results[indicator] = null;
+                console.error(`FRED odrzucił zapytanie dla ${indicator}: ${response.status}`);
+            }
+        } catch (e) {
+            console.error(`Błąd sieciowy FRED dla ${indicator}:`, e);
+            results[indicator] = null;
+        }
+    }
+
+    return results;
+});

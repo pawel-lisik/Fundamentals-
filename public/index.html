@@ -16,7 +16,7 @@
                 <div class="header">
                     <div class="top-row">
                         <h1 style="font-size: 27px" id="company-title">Fundamentals</h1>
-                        <div class="period-toggle" id="period-toggle">
+                        <div class="period-toggle" id="period-toggle" style="display: none;">
                             <button class="toggle-btn active" data-period="annual">Annual</button>
                             <button class="toggle-btn" data-period="quarterly">Quarterly</button>
                         </div>
@@ -41,7 +41,60 @@
                 <div id="loading" style="display: none;">Pobieranie i analizowanie danych XBRL z SEC EDGAR...</div>
                 <div id="no-data-msg" style="color: var(--text-secondary); text-align: center; padding: 40px 0;">Wybierz spółkę z listy obserwowanych po prawej stronie, aby załadować jej dane fundamentalne.</div>            
 
-                
+                <!-- NOWY KONTENER: MAKROEKONOMIA -->
+                <div id="macro-container" style="display: none; padding-top: 15px; padding-bottom: 30px;">
+                    
+                    <div class="macro-header">
+                        <h2 style="margin: 0; color: var(--text-primary);">Makroekonomia</h2>
+                        <div class="period-toggle">
+                            <button class="toggle-btn macro-country-btn active" data-country="US">USA</button>
+                            <button class="toggle-btn macro-country-btn" data-country="PL">Polska</button>
+                        </div>
+                    </div>
+
+                    <!-- Sekcja: Waluty -->
+                    <div class="macro-card" style="margin-bottom: 20px;">
+                        <div class="macro-header" style="margin-bottom: 10px;">
+                            <h3 class="macro-card-title" style="margin: 0; font-size: 16px;">Rynek Walutowy (FX)</h3>
+                            <div class="period-toggle">
+                                <button class="toggle-btn macro-currency-btn active" data-currency="USDPLN=X">USD/PLN</button>
+                                <button class="toggle-btn macro-currency-btn" data-currency="EURUSD=X">EUR/USD</button>
+                                <button class="toggle-btn macro-currency-btn" data-currency="EURPLN=X">EUR/PLN</button>
+                            </div>
+                        </div>
+                        <div style="height: 250px; width: 100%; position: relative;">
+                            <canvas id="macro-currency-chart"></canvas>
+                        </div>
+                    </div>
+                    <h3>Leading Indicators</h3>
+                    
+                    <h3>Lagging Indicators</h3>
+                    <!-- Sekcja: Grid Wskaźników Makro -->
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+                        <div class="macro-card">
+                            <h3 class="macro-card-title">PKB (Znormalizowane)</h3>
+                            <div class="macro-chart-box"><canvas id="macro-gdp-chart"></canvas></div>
+                        </div>
+                        <div class="macro-card">
+                            <h3 class="macro-card-title">Stopy procentowe (Rentowność 10Y)</h3>
+                            <div class="macro-chart-box"><canvas id="macro-rates-chart"></canvas></div>
+                        </div>
+                        <div class="macro-card">
+                            <h3 class="macro-card-title">Inflacja r/r (CPI)</h3>
+                            <div class="macro-chart-box"><canvas id="macro-inflation-chart"></canvas></div>
+                        </div>
+                        <div class="macro-card">
+                            <h3 class="macro-card-title">Stopa bezrobocia</h3>
+                            <div class="macro-chart-box"><canvas id="macro-unemployment-chart"></canvas></div>
+                        </div>
+                        <!-- Zmiana zatrudnienia rozciąga się na 2 kolumny -->
+                        <div class="macro-card" style="grid-column: span 2;">
+                            <h3 class="macro-card-title">Zmiana zatrudnienia (Nowe miejsca pracy)</h3>
+                            <div class="macro-chart-box"><canvas id="macro-jobs-chart"></canvas></div>
+                        </div>
+                    </div>
+
+                </div>
 
                 <div class="chart-wrapper" id="chart-wrapper" style="display: none;">
                     <canvas id="financial-chart"></canvas>

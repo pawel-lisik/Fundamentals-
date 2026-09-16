@@ -571,3 +571,45 @@ body {
     font-size: 11px;
     color: var(--text-secondary);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* Style dla widoku Makroekonomia */
+.macro-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.macro-card {
+    background: var(--bg-secondary, rgba(150, 150, 150, 0.05));
+    border: 1px solid var(--border-color, rgba(150, 150, 150, 0.2));
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+}
+
+.macro-card-title {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.macro-chart-box {
+    flex-grow: 1;
+    min-height: 180px;
+    position: relative;
+}
