@@ -4,6 +4,8 @@ let sectorPriceData: any[] | null = null;
 let chartInstance: any = null; // Przechowuje instancję wykresu do jej niszczenia prz
 let peChartInstance: any = null;
 let currentNews: any[] = [];
+let similarCompaniesData: any[] = [];
+let currentLoadedTicker: string | null = null;
 
 // Typy wierszy dla tabeli
 // Typy wierszy dla tabeli
@@ -90,6 +92,26 @@ let rawSecData: any = null;
 const currentYear = new Date().getFullYear();
 const YEARS_TO_FETCH = 20;
 
+// Funkcja aktualizująca stan przycisku dodawania do obserwowanych
+function updateWatchlistButtonState() {
+    const btn = document.getElementById('add-to-watchlist-btn');
+    if (!btn) return;
+
+    if (!currentLoadedTicker) {
+        btn.style.display = 'none';
+        return;
+    }
+
+    // Pokaż przycisk, skoro jakaś spółka jest załadowana
+    btn.style.display = 'block'; 
+
+    if (watchlist.includes(currentLoadedTicker)) {
+        btn.innerHTML = '<i class="fa-solid fa-minus"></i>';
+    } else {
+        btn.innerHTML = '<i class="fa-solid fa-plus"></i>';
+    }
+}
+
 // Podpięcie logiki dla GŁÓWNYCH zakładek
 // ZBIORCZA INICJALIZACJA INTERFEJSU (Zastępuje stare, luźne event listenery)
 document.addEventListener('DOMContentLoaded', () => {
@@ -129,15 +151,51 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // 4. Przycisk dodawania do obserwowanych
-    document.getElementById('add-to-watchlist-btn')?.addEventListener('click', () => {
-        const ticker = (document.getElementById('ticker-input') as HTMLInputElement).value.toUpperCase();
-        if (ticker && !watchlist.includes(ticker)) {
-            watchlist.push(ticker);
-            localStorage.setItem('myWatchlist', JSON.stringify(watchlist));
-            renderWatchlist();
+// 4. Wyszukiwarka i przycisk obserwowanych
+    const tickerInput = document.getElementById('ticker-input') as HTMLInputElement;
+    const searchBtn = document.getElementById('search-btn');
+    const watchlistBtn = document.getElementById('add-to-watchlist-btn');
+
+    // Wspólna funkcja wyszukująca
+    const performSearch = () => {
+        if (!tickerInput) return;
+        const ticker = tickerInput.value.trim().toUpperCase();
+        if (ticker) {
+            tickerInput.value = ''; // Czyszczenie po wyszukaniu
+            tickerInput.blur();     // Odznaczenie pola
+            loadSecData(ticker);
+        }
+    };
+
+    // Wyszukiwanie po wciśnięciu ENTER
+    tickerInput?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            performSearch();
         }
     });
+
+    // NOWE: Wyszukiwanie po kliknięciu w LUPĘ
+    searchBtn?.addEventListener('click', () => {
+        performSearch();
+    });
+
+    // Przycisk Dodaj/Usuń dla OBECNIE załadowanej spółki
+    watchlistBtn?.addEventListener('click', () => {
+        if (!currentLoadedTicker) return;
+
+        if (watchlist.includes(currentLoadedTicker)) {
+            // Usuwamy
+            removeFromWatchlist(currentLoadedTicker);
+        } else {
+            // Dodajemy
+            watchlist.push(currentLoadedTicker);
+            localStorage.setItem('myWatchlist', JSON.stringify(watchlist));
+            renderWatchlist();
+            updateWatchlistButtonState();
+        }
+    });
+
+
     document.getElementById('hide-watchlist-btn')?.addEventListener('click', () => {
     // Przełączamy jedną klasę na głównym rodzicu (np. body lub wrapperze)
     document.body.classList.toggle('sidebar-hidden');
@@ -165,6 +223,7 @@ function removeFromWatchlist(ticker: string) {
     watchlist = watchlist.filter(t => t !== ticker);
     localStorage.setItem('myWatchlist', JSON.stringify(watchlist));
     renderWatchlist();
+    updateWatchlistButtonState(); // DODANE: aktualizacja przycisku!
 }
 
 async function renderWatchlist() {
@@ -235,6 +294,9 @@ let currentQuoteInfo: any = null;
 async function loadSecData(ticker: string) {
     if (!ticker) return;
 
+    currentLoadedTicker = ticker.toUpperCase();
+    updateWatchlistButtonState();
+
     document.getElementById('loading')!.style.display = 'block';
     document.getElementById('table-container')!.innerHTML = '';
     document.getElementById('no-data-msg')!.style.display = 'none';
@@ -244,17 +306,19 @@ async function loadSecData(ticker: string) {
 
     try {
         // POBIERANIE RÓWNOLEGŁE 4 ŹRÓDEŁ
-        const [secRes, priceRes, quoteRes, newsRes] = await Promise.all([
+        const [secRes, priceRes, quoteRes, newsRes, similarRes] = await Promise.all([
             (window as any).electronAPI.fetchSecData(ticker),
             (window as any).electronAPI.getHistoricalPrices(ticker),
             (window as any).electronAPI.getYahooQuote(ticker), // Pobiera aktualne wskaźniki
-            (window as any).electronAPI.getCompanyNews(ticker) // Pobiera wiadomości firmy
+            (window as any).electronAPI.getCompanyNews(ticker), // Pobiera wiadomości firmy
+            (window as any).electronAPI.getSimilarCompanies(ticker)
         ]);
         
         rawSecData = secRes;
         rawPriceData = priceRes;
         currentQuoteInfo = quoteRes;
         currentNews = newsRes;
+        similarCompaniesData = similarRes;
 
         // --- NOWE: POBIERANIE HISTORII SEKTORA (ETF) ---
         if (currentQuoteInfo && currentQuoteInfo.sector) {
@@ -264,6 +328,7 @@ async function loadSecData(ticker: string) {
         }
         
         renderData();
+        updateWatchlistButtonState(); // Zostaje samo odświeżenie przycisku
     } catch (error) {
         alert('Wystąpił błąd podczas pobierania danych. Sprawdź konsolę.');
         console.error(error);
@@ -271,6 +336,7 @@ async function loadSecData(ticker: string) {
         document.getElementById('loading')!.style.display = 'none';
     }
 }
+
 
 // Formatowanie kapitalizacji
 function formatLargeNumber(num: number | null): string {
@@ -282,7 +348,24 @@ function formatLargeNumber(num: number | null): string {
 }
 
 
+function formatRecommendation(key: string | null): { text: string; color: string } {
+    if (!key) return { text: 'Brak', color: 'var(--text-secondary)' };
 
+    switch (key.toLowerCase()) {
+        case 'strong_buy':
+            return { text: 'Strong Buy', color: '#00E676' };
+        case 'buy':
+            return { text: 'Buy', color: '#3CD859' };
+        case 'hold':
+            return { text: 'Hold', color: '#FFB300' };
+        case 'underperform':
+            return { text: 'Underperform', color: '#FF7043' };
+        case 'sell':
+            return { text: 'Sell', color: '#FF5252' };
+        default:
+            return { text: key.toUpperCase().replace('_', ' '), color: 'var(--text-primary)' };
+    }
+}
 
 
 function renderData() {
@@ -303,58 +386,118 @@ function renderData() {
         
 
 
-        // Zaktualizuj panele statystyk na dole
+// Zaktualizuj panele statystyk na dole
         if (currentQuoteInfo) {
-            // --- DODANA LINIJKA DLA SEKTORA ---
-            document.getElementById('ov-sector')!.textContent = currentQuoteInfo.sector || 'Brak danych';
 
+
+            const titleEl = document.getElementById('company-title');
+            if (titleEl && currentQuoteInfo.name) {
+                titleEl.innerHTML = `${currentLoadedTicker} &nbsp;&nbsp;&nbsp;<span style="color: var(--text-secondary); font-size: 16px; font-weight: normal;">${currentQuoteInfo.name}</span>`;
+            }
+
+            document.getElementById('ov-sector')!.textContent = currentQuoteInfo.sector || 'Brak danych';
             document.getElementById('ov-market-cap')!.textContent = formatLargeNumber(currentQuoteInfo.marketCap);
             document.getElementById('ov-pe')!.textContent = currentQuoteInfo.pe ? currentQuoteInfo.pe.toFixed(2) : 'Brak';
             document.getElementById('ov-peg')!.textContent = currentQuoteInfo.peg ? currentQuoteInfo.peg.toFixed(2) : 'Brak';
             
-            // --- OBSŁUGA DATY DYWIDENDY ---
-            const divElement = document.getElementById('ov-dividend-date')!;
-            const divLabel = document.getElementById('ov-dividend-label')!;
+            // 1. DATA DYWIDENDY (Przywrócona brakująca logika!)
+            const divElement = document.getElementById('ov-dividend-date');
+            const divLabel = document.getElementById('ov-dividend-label');
+            if (divElement && divLabel) {
+                if (currentQuoteInfo.dividendDate) {
+                    const d = new Date(currentQuoteInfo.dividendDate);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
 
-            if (currentQuoteInfo.dividendDate) {
-                const d = new Date(currentQuoteInfo.dividendDate);
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
+                    if (d < today) {
+                        divLabel.textContent = 'Ostatnia dywidenda';
+                    } else {
+                        divLabel.textContent = 'Następna dywidenda';
+                    }
 
-                if (d < today) {
-                    divLabel.textContent = 'Ostatnia dywidenda';
+                    divElement.textContent = d.toLocaleDateString('pl-PL', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric'
+                    });
                 } else {
-                    divLabel.textContent = 'Następna dywidenda';
+                    divLabel.textContent = 'Dividend Date';
+                    divElement.textContent = 'Brak';
                 }
-
-                divElement.textContent = d.toLocaleDateString('pl-PL', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric'
-                });
-            } else {
-                divLabel.textContent = 'Dywidenda';
-                divElement.textContent = 'Brak';
             }
-        }
 
+            // 2. BETA
+            const betaEl = document.getElementById('ov-beta');
+            if (betaEl) {
+                betaEl.textContent = currentQuoteInfo.beta != null ? currentQuoteInfo.beta.toFixed(2) : 'Brak';
+            }
 
-        // --- NOWE: CENA DOCELOWA Z PROCENTAMI ---
-        const targetPriceEl = document.getElementById('ov-target-price');
-        if (targetPriceEl) {
-            if (currentQuoteInfo.targetPrice && currentQuoteInfo.price) {
-                const target = currentQuoteInfo.targetPrice;
-                const current = currentQuoteInfo.price;
-                const diffPercent = ((target - current) / current) * 100;
-                
-                const sign = diffPercent >= 0 ? '+' : '';
-                const color = diffPercent >= 0 ? '#3CD859' : '#FF5252'; // Zielony dla wzrostu, czerwony dla spadku
-                
-                targetPriceEl.innerHTML = `$${target.toFixed(2)} <span style="color: ${color}; font-size: 13px; font-weight: 500; margin-left: 6px;">(${sign}${diffPercent.toFixed(2)}%)</span>`;
-            } else if (currentQuoteInfo.targetPrice) {
-                targetPriceEl.textContent = `$${currentQuoteInfo.targetPrice.toFixed(2)}`;
-            } else {
-                targetPriceEl.textContent = 'Brak';
+            // 3. STOPA DYWIDENDY (Yield)
+            const yieldEl = document.getElementById('ov-dividend-yield');
+            if (yieldEl) {
+                yieldEl.textContent = currentQuoteInfo.dividendYield != null 
+                    ? `${currentQuoteInfo.dividendYield.toFixed(2)}%` 
+                    : 'Brak';
+            }
+
+            // 4. DATA RAPORTU (Earnings Date) - Przeniesione do bezpiecznego bloku
+            const earnEl = document.getElementById('ov-earnings-date');
+            if (earnEl) {
+                if (currentQuoteInfo.earningsDate) {
+                    const eDate = new Date(currentQuoteInfo.earningsDate);
+                    earnEl.textContent = eDate.toLocaleDateString('pl-PL', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric'
+                    });
+                } else {
+                    earnEl.textContent = 'Brak';
+                }
+            }
+
+            // 5. CENA DOCELOWA Z PROCENTAMI - Przeniesione do bezpiecznego bloku
+            const targetPriceEl = document.getElementById('ov-target-price');
+            if (targetPriceEl) {
+                if (currentQuoteInfo.targetPrice && currentQuoteInfo.price) {
+                    const target = currentQuoteInfo.targetPrice;
+                    const current = currentQuoteInfo.price;
+                    const diffPercent = ((target - current) / current) * 100;
+                    
+                    const sign = diffPercent >= 0 ? '+' : '';
+                    const color = diffPercent >= 0 ? '#3CD859' : '#FF5252'; 
+                    
+                    targetPriceEl.innerHTML = `$${target.toFixed(2)} <span style="color: ${color}; font-size: 13px; font-weight: 500; margin-left: 6px;">(${sign}${diffPercent.toFixed(2)}%)</span>`;
+                } else if (currentQuoteInfo.targetPrice) {
+                    targetPriceEl.textContent = `$${currentQuoteInfo.targetPrice.toFixed(2)}`;
+                } else {
+                    targetPriceEl.textContent = 'Brak';
+                }
+            }
+
+            // 6. REKOMENDACJA ANALITYKÓW (Wizualna skala)
+            const recWrapper = document.getElementById('ov-recommendation-wrapper');
+            const recMeanEl = document.getElementById('rec-mean-value');
+            const recMarker = document.getElementById('rec-marker');
+
+            if (recWrapper && recMeanEl && recMarker) {
+                const mean = currentQuoteInfo.recommendationMean; 
+                const key = currentQuoteInfo.recommendationKey;
+
+                if (mean != null) {
+                    recWrapper.style.display = 'block';
+                    
+                    let percent = ((mean - 1.0) / 4.0) * 100;
+                    if (percent < 0) percent = 0;
+                    if (percent > 100) percent = 100;
+
+                    recMarker.style.left = `${percent}%`;
+
+                    const recFormatted = formatRecommendation(key);
+                    recMeanEl.textContent = `${recFormatted.text} (${mean.toFixed(2)})`;
+                    recMeanEl.style.color = recFormatted.color;
+                } else {
+                    recWrapper.style.display = 'none';
+                }
             }
         }
 
@@ -433,6 +576,128 @@ function renderData() {
         }
 
 
+
+        // ==========================================
+        // --- NOWE: RENDEROWANIE PODOBNYCH SPÓŁEK ---
+        // ==========================================
+        let similarStocks = document.getElementById('ov-similar-companies');
+        if (similarStocks) {
+            if (similarCompaniesData && similarCompaniesData.length > 0) {
+                
+                let html = `<div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px;">`;
+                
+                for (let i = 0; i < similarCompaniesData.length; i++) {
+                    const comp = similarCompaniesData[i];
+                    
+                    // DODANO: class="similar-comp-card", data-ticker, data-name oraz style="cursor: pointer; transition: 0.2s;"
+                    html += `
+                    <div class="similar-comp-card" data-ticker="${comp.ticker}" data-name="${comp.name}" 
+                         style="cursor: pointer; flex: 1; min-width: 150px; background: var(--bg-secondary, rgba(150, 150, 150, 0.05)); border: 1px solid var(--border-color, rgba(150, 150, 150, 0.2)); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; transition: background-color 0.2s;">
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                            <div>
+                                <div style="font-weight: 600; font-size: 14px; color: var(--text-primary);">${comp.ticker}</div>
+                                <div style="font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 90px;" title="${comp.name}">${comp.name}</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 11px; color: var(--text-secondary);">P/E</div>
+                                <div style="font-weight: 600; font-size: 13px; color: var(--text-primary);">${comp.pe ? comp.pe.toFixed(2) : 'Brak'}</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Kontener dla mini-wykresu (Chart.js dostosuje się do rozmiaru rodzica) -->
+                        <div style="height: 40px; width: 100%; position: relative; margin-top: auto;">
+                            <canvas id="sparkline-${i}"></canvas>
+                        </div>
+                    </div>`;
+                }
+                html += `</div>`;
+                similarStocks.innerHTML = html;
+                similarStocks.style.display = 'block';
+
+                // 1. Odpalamy instancje Chart.js
+                for (let i = 0; i < similarCompaniesData.length; i++) {
+                    const comp = similarCompaniesData[i];
+                    const canvas = document.getElementById(`sparkline-${i}`) as HTMLCanvasElement;
+                    
+                    if (canvas && comp.prices && comp.prices.length > 0) {
+                        const isPositive = comp.prices[comp.prices.length - 1] >= comp.prices[0];
+                        const sparkColor = isPositive ? '#3CD859' : '#FF5252';
+                        
+                        new Chart(canvas, {
+                            type: 'line',
+                            data: {
+                                labels: comp.prices.map((_: any, idx: number) => idx.toString()),
+                                datasets: [{
+                                    data: comp.prices,
+                                    borderColor: sparkColor,
+                                    borderWidth: 1.5,
+                                    pointRadius: 0,
+                                    tension: 0.1,
+                                    fill: false
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                animation: false,
+                                plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                                scales: { x: { display: false }, y: { display: false } },
+                                layout: { padding: 0 }
+                            }
+                        });
+                    }
+                }
+
+                // ==========================================================
+                // 2. DODANO: Obsługa kliknięcia w kafelki podobnych spółek
+                // ==========================================================
+                document.querySelectorAll('.similar-comp-card').forEach(card => {
+                    // Opcjonalnie: efekt najechania myszką
+                    card.addEventListener('mouseenter', (e) => {
+                        (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-hover, rgba(150, 150, 150, 0.15))';
+                    });
+                    card.addEventListener('mouseleave', (e) => {
+                        (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-secondary, rgba(150, 150, 150, 0.05))';
+                    });
+
+                    // Faktyczne kliknięcie
+                    card.addEventListener('click', (e) => {
+                        const currentTarget = e.currentTarget as HTMLElement;
+                        const targetTicker = currentTarget.dataset.ticker;
+                        const targetName = currentTarget.dataset.name;
+
+                        if (targetTicker) {
+                            // Ładujemy dane dla klikniętej spółki
+                            loadSecData(targetTicker);
+                            
+                            // Aktualizujemy tytuł u góry
+                            const title = document.getElementById('company-title');
+                            if (title && targetName) {
+                                title.textContent = targetName;
+                            }
+
+                            // Opcjonalnie: wpisujemy kliknięty ticker do inputa wyszukiwarki (jeśli istnieje)
+                            const tickerInput = document.getElementById('ticker-input') as HTMLInputElement;
+                            if (tickerInput) {
+                                tickerInput.value = targetTicker;
+                            }
+                            
+
+                            const scrollContainer = document.getElementById('main-content');
+                            if (scrollContainer) {
+                                scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+                            }
+                        }
+                    });
+                });
+                // ==========================================================
+
+            } else if (similarStocks) {
+                similarStocks.style.display = 'none';
+            }
+        }
+        // ==========================================
 
 
         // --- RENDEROWANIE WIADOMOŚCI ---

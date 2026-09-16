@@ -183,14 +183,47 @@ ipcMain.handle('get-historical-prices', async (event, ticker: string) => {
 ipcMain.handle('get-yahoo-quote', async (event, ticker: string) => {
     try {
         const quote = await yahooFinance.quote(ticker);
-        // Dodajemy 'calendarEvents', żeby upewnić się, że pobierzemy datę dywidendy
         const summary = await yahooFinance.quoteSummary(ticker, { 
             modules: ['summaryDetail', 'defaultKeyStatistics', 'assetProfile', 'calendarEvents', 'financialData'] 
         }).catch(() => null);
         
-        // Data często zwracana jest jako obiekt Date, bezpiecznie rzutujemy ją na string dla frontendu
-        const rawDivDate = quote.dividendDate || summary?.calendarEvents?.dividendDate || null;
-        
+        // Szukamy daty wypłaty dywidendy LUB daty odcięcia (ex-dividend) w 4 różnych miejscach API
+        const rawDivDate = quote.dividendDate 
+            || summary?.calendarEvents?.dividendDate 
+            || summary?.calendarEvents?.exDividendDate 
+            || summary?.summaryDetail?.exDividendDate 
+            || null;
+            
+        let finalDivDateStr = null;
+        if (rawDivDate) {
+            const parsedDate = new Date(rawDivDate);
+            // Sprawdzamy czy data jest poprawna (zabezpieczenie przed błędami z API)
+            if (!isNaN(parsedDate.getTime())) {
+                finalDivDateStr = parsedDate.toISOString();
+            }
+        }
+
+        // Dividend Yield w Yahoo bywa ułamkiem dziesiętnym (np. 0.015 dla 1.5%) lub gotowym procentem
+        const rawDivYield = summary?.summaryDetail?.dividendYield ?? quote.trailingAnnualDividendYield ?? null;
+        let dividendYield: number | null = null;
+        if (rawDivYield !== null && rawDivYield !== undefined) {
+            dividendYield = rawDivYield <= 1 ? rawDivYield * 100 : rawDivYield;
+        }
+
+        let earningsDateStr = null;
+        if (summary?.calendarEvents?.earnings?.earningsDate) {
+            const eDates = summary.calendarEvents.earnings.earningsDate;
+            if (Array.isArray(eDates) && eDates.length > 0) {
+                // Czasami Yahoo zwraca przedział dat, bierzemy pierwszą (początkową)
+                earningsDateStr = new Date(eDates[0]).toISOString();
+            } else if (eDates) {
+                earningsDateStr = new Date(eDates).toISOString();
+            }
+        } else if (quote.earningsTimestamp) {
+            // Awaryjne pobieranie bezpośrednio ze statystyk aktualnego kursu
+            earningsDateStr = new Date(quote.earningsTimestamp * 1000).toISOString();
+        }
+
         return {
             price: quote.regularMarketPrice,
             changePercent: quote.regularMarketChangePercent,
@@ -199,9 +232,16 @@ ipcMain.handle('get-yahoo-quote', async (event, ticker: string) => {
             peg: summary?.defaultKeyStatistics?.pegRatio || null,
             sector: summary?.assetProfile?.sector || 'Inne',
             marketCap: quote.marketCap || null,
-            dividendDate: rawDivDate ? new Date(rawDivDate).toISOString() : null, // NOWE: Przekazujemy jako tekst ISO
+            dividendDate: rawDivDate ? new Date(rawDivDate).toISOString() : null,
             targetPrice: summary?.financialData?.targetMeanPrice || summary?.financialData?.targetMedianPrice || null,
             description: summary?.assetProfile?.longBusinessSummary || '',
+
+            // --- NOWE WSKAŹNIKI ---
+            beta: summary?.defaultKeyStatistics?.beta ?? summary?.summaryDetail?.beta ?? null,
+            dividendYield: dividendYield,
+            recommendationKey: summary?.financialData?.recommendationKey ?? null, // np. 'strong_buy', 'buy', 'hold', 'sell'
+            recommendationMean: summary?.financialData?.recommendationMean ?? null, // np. 1.8 (w skali 1.0 - 5.0)
+            earningsDate: earningsDateStr,
         };
     } catch (e) {
         console.error("Błąd pobierania danych z Yahoo dla:", ticker, e);
@@ -259,4 +299,57 @@ ipcMain.handle('get-sector-historical-prices', async (event, sectorName: string)
     // Jeśli nie rozpoznamy sektora, zwracamy pustą tablicę
     if (!etfTicker) return []; 
     return fetchHistoricalData(etfTicker);
+});
+
+ipcMain.handle('get-similar-companies', async (event, ticker: string) => {
+    try {
+        // 1. Pobieramy polecane/podobne spółki
+        const recommendations = await yahooFinance.recommendationsBySymbol(ticker);
+        
+        // Zabezpieczenie na wypadek braku rekomendacji i bierzemy tylko 4 pierwsze spółki
+        if (!recommendations || !recommendations.recommendedSymbols || recommendations.recommendedSymbols.length === 0) {
+            return [];
+        }
+        const symbols = recommendations.recommendedSymbols.slice(0, 4).map((r: any) => r.symbol);
+        
+        // 2. Hurtowo pobieramy aktualne ceny i wskaźniki (P/E)
+        const quotes = await yahooFinance.quote(symbols);
+        const quotesArray = Array.isArray(quotes) ? quotes : [quotes];
+        
+        const result = [];
+        
+        // Okienko czasowe do mini-wykresu - ostatni miesiąc
+        const dzis = new Date();
+        const start = new Date();
+        start.setMonth(dzis.getMonth() - 1); 
+        
+        for (const q of quotesArray) {
+            try {
+                // 3. Pobieramy wykres z 1 miesiąca dla każdej spółki
+                const history = await yahooFinance.chart(q.symbol, {
+                    period1: start.toISOString().split('T')[0],
+                    period2: dzis.toISOString().split('T')[0],
+                    interval: '1d'
+                });
+                
+                const prices = history.quotes
+                    .filter((hq: any) => hq.close !== null)
+                    .map((hq: any) => hq.close);
+                
+                result.push({
+                    ticker: q.symbol,
+                    name: q.shortName || q.longName || q.symbol,
+                    pe: q.trailingPE || null, // Pobieramy wskaźnik P/E
+                    prices: prices // Tablica notowań do wyrysowania
+                });
+            } catch(e) {
+                console.error(`Błąd historii wykresu dla ${q.symbol}:`, e);
+            }
+        }
+        
+        return result;
+    } catch (e) {
+        console.error("Błąd pobierania podobnych spółek:", e);
+        return [];
+    }
 });
