@@ -115,6 +115,38 @@
 
                 </div>
 
+                <!-- NOWY KONTENER: EARNINGS (Zyski na akcję) -->
+<!-- NOWY KONTENER: EARNINGS (Zyski na akcję) -->
+
+<!-- NOWY KONTENER: EARNINGS (Zyski na akcję) -->
+<!-- NOWY KONTENER: EARNINGS (Zyski na akcję) -->
+                <div id="earnings-container" style="display: none; padding-top: 15px; padding-bottom: 30px;">
+                    <div class="macro-header" style="margin-bottom: 20px;">
+                        <h2 style="margin: 0; color: var(--text-primary);">Earnings (Zyski na akcję)</h2>
+                    </div>
+
+                    <!-- Siatka na dwa wykresy obok siebie -->
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+                        
+                        <!-- WYKRES 1: Roczny (TradingView Style) -->
+                        <div class="macro-card">
+                            <h3 class="macro-card-title">Roczny EPS (Historia i Prognoza)</h3>
+                            <div style="height: 300px; width: 100%; position: relative;">
+                                <canvas id="annual-earnings-chart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- WYKRES 2: Kwartalny (Zaskoczenia) -->
+                        <div class="macro-card">
+                            <h3 class="macro-card-title">Kwartalny EPS (Prognoza vs Rzeczywistość)</h3>
+                            <div style="height: 300px; width: 100%; position: relative;">
+                                <canvas id="quarterly-earnings-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                    </div>
+                </div>
+
                 <div class="chart-wrapper" id="chart-wrapper" style="display: none;">
                     <canvas id="financial-chart"></canvas>
                 </div>
@@ -255,8 +287,13 @@
                     <span>Indicators</span>
                 </button>
                 <button class="main-tab-btn" data-maintab="dividends">
-                    <i class="fa-solid fa-money-bills"></i> 
+                    <i class="fa-solid fa-percent"></i>
                     <span>Dividends</span>
+                </button>
+                <!-- Przycisk dodany pod przyciskiem Makroekonomia -->
+                <button class="main-tab-btn" data-maintab="earnings">                    
+                    <i class="fa-solid fa-money-bills"></i> 
+                    <span>Earnings</span>
                 </button>
                 <button class="main-tab-btn" data-maintab="macro">
                     <i class="fa-solid fa-globe"></i> 

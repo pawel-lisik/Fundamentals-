@@ -310,7 +310,7 @@ ipcMain.handle('get-similar-companies', async (event, ticker: string) => {
         if (!recommendations || !recommendations.recommendedSymbols || recommendations.recommendedSymbols.length === 0) {
             return [];
         }
-        const symbols = recommendations.recommendedSymbols.slice(0, 4).map((r: any) => r.symbol);
+        const symbols = recommendations.recommendedSymbols.slice(0, 5).map((r: any) => r.symbol);
         
         // 2. Hurtowo pobieramy aktualne ceny i wskaźniki (P/E)
         const quotes = await yahooFinance.quote(symbols);
@@ -458,4 +458,22 @@ ipcMain.handle('get-macro-data', async (event, countryCode: string) => {
     }
 
     return results;
+});
+
+
+// --- NOWE: POBIERANIE HISTORII ZYSKÓW ORAZ PROGNOZ ---
+ipcMain.handle('get-earnings-data', async (event, ticker: string) => {
+    try {
+        const summary = await yahooFinance.quoteSummary(ticker, { 
+            modules: ['earningsHistory', 'earningsTrend'] 
+        }).catch(() => null);
+        
+        return {
+            history: summary?.earningsHistory?.history || [],
+            trend: summary?.earningsTrend?.trend || []
+        };
+    } catch (e) {
+        console.error("Błąd pobierania historii Earnings dla:", ticker, e);
+        return { history: [], trend: [] };
+    }
 });

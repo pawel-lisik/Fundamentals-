@@ -54,12 +54,41 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         { label: 'Retained Earnings', tags: ['RetainedEarningsAccumulatedDeficit'], style: 'normal' },
         { label: 'Shareholders Equity', tags: ['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'], style: 'total' }
     ],
+
     cashflow: [
-        { label: 'Operating Cash Flow', tags: ['NetCashProvidedByUsedInOperatingActivities'], style: 'total' },
-        { label: 'Investing Cash Flow', tags: ['NetCashProvidedByUsedInInvestingActivities'], style: 'total' },
-        { label: 'Financing Cash Flow', tags: ['NetCashProvidedByUsedInFinancingActivities'], style: 'total' },
+        { 
+            label: 'Operating Cash Flow', 
+            tags: [
+                'NetCashProvidedByUsedInOperatingActivities', 
+                'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations' // <-- Alternatywny tag Apple
+            ], 
+            style: 'total' 
+        },
+        { 
+            label: 'Investing Cash Flow', 
+            tags: [
+                'NetCashProvidedByUsedInInvestingActivities', 
+                'NetCashProvidedByUsedInInvestingActivitiesContinuingOperations' // <-- Alternatywny tag Apple
+            ], 
+            style: 'total' 
+        },
+        { 
+            label: 'Financing Cash Flow', 
+            tags: [
+                'NetCashProvidedByUsedInFinancingActivities', 
+                'NetCashProvidedByUsedInFinancingActivitiesContinuingOperations' // <-- Alternatywny tag Apple
+            ], 
+            style: 'total' 
+        },
         { label: 'space1', tags: [], style: 'empty' },
-        { label: 'Capital Expenditures', tags: ['PaymentsToAcquirePropertyPlantAndEquipment'], style: 'normal' }
+        { 
+            label: 'Capital Expenditures', 
+            tags: [
+                'PaymentsToAcquirePropertyPlantAndEquipment', 
+                'PaymentsToAcquireProductiveAssets' // <-- Specyficzny tag CapEx używany długo przez Apple
+            ], 
+            style: 'normal' 
+        }
     ],
     indicators: [
         { label: 'Return on Equity (ROE)', tags: [], style: 'normal', format: 'percent' },
@@ -82,9 +111,14 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
 };
 
 // Zmienne stanu (State)
-let currentMainTab: 'overview' | 'statements' | 'indicators' | 'dividends' | 'macro' = 'overview';
+let currentMainTab: 'overview' | 'statements' | 'indicators' | 'dividends' | 'macro' | 'earnings' = 'overview';
 let currentTab: 'income' | 'balance' | 'cashflow' = 'income'; // Podzakładka aktywna tylko w statements
 let currentPeriod: 'annual' | 'quarterly' = 'annual';
+
+let currentEarningsData: any = null;
+let annualEarningsChartInstance: any = null;
+let quarterlyEarningsChartInstance: any = null;
+let earningsChartInstance: any = null;
 
 let rawSecData: any = null;
 
@@ -118,33 +152,51 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 1. Główne zakładki (Statements, Indicators, Dividends)
 
-    // 1. Główne zakładki (Statements, Indicators, Dividends, Macro)
+    // 1. Główne zakładki (Statements, Indicators, Dividends, Macro, Earnings)
     document.querySelectorAll('.main-tab-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             document.querySelectorAll('.main-tab-btn').forEach(b => b.classList.remove('active'));
             const target = e.currentTarget as HTMLButtonElement;
             target.classList.add('active');
-            currentMainTab = target.dataset.maintab as 'overview' | 'statements' | 'indicators' | 'dividends' | 'macro';
+            currentMainTab = target.dataset.maintab as 'overview' | 'statements' | 'indicators' | 'dividends' | 'macro' | 'earnings';
             
             // KONTROLA WIDOCZNOŚCI
+
             const macroContainer = document.getElementById('macro-container');
+            const earningsContainer = document.getElementById('earnings-container'); // <-- NOWE
+            const subTabsContainer = document.getElementById('sub-tabs-container');
+            const periodToggle = document.getElementById('period-toggle');
             const otherContainers = [
                 document.getElementById('overview-info-container'),
                 document.getElementById('table-container'),
                 document.getElementById('chart-wrapper'),
                 document.getElementById('sub-tabs-container'),
-                document.getElementById('no-data-msg')
+                document.getElementById('no-data-msg'),
+                earningsContainer,
+                macroContainer
             ];
 
+
+            // Ukrywamy wszystko
+            otherContainers.forEach(el => { if(el) el.style.display = 'none'; });
+            if (subTabsContainer) subTabsContainer.style.display = 'none';
+            if (periodToggle) periodToggle.style.display = 'none';
+
             if (currentMainTab === 'macro') {
-                // Jeśli makro, ukrywamy widoki spółki i ładujemy panel kraju
-                otherContainers.forEach(el => { if(el) el.style.display = 'none'; });
                 if (macroContainer) macroContainer.style.display = 'block';
-                loadMacroTab(); // Nowa funkcja
+                loadMacroTab(); 
+            } else if (currentMainTab === 'earnings') {
+                // --- LOGIKA ZAKŁADKI EARNINGS ---
+                if (earningsContainer) earningsContainer.style.display = 'block';
+                renderEarnings(); 
             } else {
                 // Wracamy do widoku spółki
-                if (macroContainer) macroContainer.style.display = 'none';
-                if (currentMainTab === 'statements') document.getElementById('sub-tabs-container')!.style.display = 'flex';
+                if (currentMainTab === 'indicators' || currentMainTab === 'statements') {
+                    if (periodToggle) periodToggle.style.display = 'block';
+                }
+                if (subTabsContainer) {
+                    subTabsContainer.style.display = currentMainTab === 'statements' ? 'flex' : 'none';
+                }
                 if (rawSecData) renderData(); 
             }
         });
@@ -327,12 +379,13 @@ async function loadSecData(ticker: string) {
 
     try {
         // POBIERANIE RÓWNOLEGŁE 4 ŹRÓDEŁ
-        const [secRes, priceRes, quoteRes, newsRes, similarRes] = await Promise.all([
+        const [secRes, priceRes, quoteRes, newsRes, similarRes, earningsRes] = await Promise.all([
             (window as any).electronAPI.fetchSecData(ticker),
             (window as any).electronAPI.getHistoricalPrices(ticker),
             (window as any).electronAPI.getYahooQuote(ticker), // Pobiera aktualne wskaźniki
             (window as any).electronAPI.getCompanyNews(ticker), // Pobiera wiadomości firmy
-            (window as any).electronAPI.getSimilarCompanies(ticker)
+            (window as any).electronAPI.getSimilarCompanies(ticker),
+            (window as any).electronAPI.getEarningsData(ticker)
         ]);
         
         rawSecData = secRes;
@@ -340,6 +393,7 @@ async function loadSecData(ticker: string) {
         currentQuoteInfo = quoteRes;
         currentNews = newsRes;
         similarCompaniesData = similarRes;
+        currentEarningsData = earningsRes;
 
         // --- NOWE: POBIERANIE HISTORII SEKTORA (ETF) ---
         if (currentQuoteInfo && currentQuoteInfo.sector) {
@@ -614,7 +668,7 @@ function renderData() {
                     // DODANO: class="similar-comp-card", data-ticker, data-name oraz style="cursor: pointer; transition: 0.2s;"
                     html += `
                     <div class="similar-comp-card" data-ticker="${comp.ticker}" data-name="${comp.name}" 
-                         style="cursor: pointer; flex: 1; min-width: 150px; background: var(--bg-secondary, rgba(150, 150, 150, 0.05)); border: 1px solid var(--border-color, rgba(150, 150, 150, 0.2)); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; transition: background-color 0.2s;">
+                         style="cursor: pointer; flex: 1; min-width: 100px; background: var(--bg-secondary, rgba(150, 150, 150, 0.05)); border: 1px solid var(--border-color, rgba(150, 150, 150, 0.2)); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; transition: background-color 0.2s;">
                         
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
                             <div>
@@ -775,20 +829,40 @@ function renderData() {
     tableContainer.style.display = 'block';
     subTabs.style.display = currentMainTab === 'statements' ? 'flex' : 'none';
 
-    const columns = currentPeriod === 'annual' ? getAnnualColumns() : getQuarterlyColumns();
+const columns = currentPeriod === 'annual' ? getAnnualColumns() : getQuarterlyColumns();
     const metricsToUse = currentMainTab === 'statements' ? METRICS_MAP[currentTab] : METRICS_MAP[currentMainTab];
     
     // Zabezpieczenie przed brakiem definicji dla nowych pustych zakładek (macro)
     if (!metricsToUse) return; 
 
-const tableData = processSecData(metricsToUse, columns);
-    renderCleanTable(tableData, columns);
+    // Wewnętrzne wyliczenia zachowujemy na oryginalnych kolumnach (dla bezpieczeństwa wskaźników)
+    const tableData = processSecData(metricsToUse, columns);
+    
+    // =========================================================================
+    // NOWE: Filtrujemy lata przed 2009 i odwracamy oś czasu (od lewej do prawej)
+    // =========================================================================
+    const displayColumns = columns
+        .filter(col => parseInt(col.substring(0, 4)) >= 2009)
+        .reverse();
+
+    // Do wyrysowania tabeli i wykresu używamy już nowych, obciętych i odwróconych kolumn
+    renderCleanTable(tableData, displayColumns);
 
     const chartData = currentMainTab === 'statements' 
         ? tableData 
         : processSecData(METRICS_MAP.income, columns);
         
-    renderChart(chartData, columns);
+    renderChart(chartData, displayColumns);
+
+    // =========================================================================
+    // NOWE: Automatyczne przewinięcie paska tabeli na sam koniec (do najnowszych lat)
+    // =========================================================================
+    setTimeout(() => {
+        const tableContainerEl = document.getElementById('table-container');
+        if (tableContainerEl) {
+            tableContainerEl.scrollLeft = tableContainerEl.scrollWidth;
+        }
+    }, 50);
 }
 
 // ZAKTUALIZOWANE OBLICZENIA W processSecData
@@ -1365,7 +1439,7 @@ function renderChart(tableData: any[], columns: string[]) {
     // 3. STATEMENTS
     // ============================================================
     else {
-        const chartLabels = [...columns].reverse();
+        const chartLabels = [...columns];
         
         let datasets: any[] = [];
         let yScaleOptions: any = {
@@ -1390,18 +1464,18 @@ function renderChart(tableData: any[], columns: string[]) {
         // --- A. WYKRES INCOME STATEMENT (5 SŁUPKÓW) ---
         if (currentTab === 'income') {
             datasets = [
-                { label: 'Revenue', data: getRowValues('Revenue'), backgroundColor: 'rgba(41, 98, 255, 0.8)', borderRadius: 2 },
-                { label: 'Gross profit', data: getRowValues('Gross profit'), backgroundColor: 'rgba(0, 188, 212, 0.8)', borderRadius: 2 },
-                { label: 'Operating income', data: getRowValues('Operating income'), backgroundColor: 'rgba(255, 152, 0, 0.8)', borderRadius: 2 },
-                { label: 'Income before tax', data: getRowValues('Income before income tax'), backgroundColor: 'rgba(156, 39, 176, 0.8)', borderRadius: 2 },
-                { label: 'Net income', data: getRowValues('Net income'), backgroundColor: 'rgba(0, 200, 83, 0.8)', borderRadius: 2 }
+                { label: 'Revenue', data: getRowValues('Revenue'), backgroundColor: '#448AFF', borderRadius: 2 },
+                { label: 'Gross profit', data: getRowValues('Gross profit'), backgroundColor: '#4DD0E1', borderRadius: 2 },
+                { label: 'Operating income', data: getRowValues('Operating income'), backgroundColor: '#F57F17', borderRadius: 2 },
+                { label: 'Income before tax', data: getRowValues('Income before income tax'), backgroundColor: '#B388FF', borderRadius: 2 },
+                { label: 'Net income', data: getRowValues('Net income'), backgroundColor: '#FBC02D', borderRadius: 2 }
             ];
         } 
         // --- B. WYKRES BALANCE SHEET (2 SŁUPKI) ---
         else if (currentTab === 'balance') {
             datasets = [
-                { label: 'Total Assets', data: getRowValues('Total Assets'), backgroundColor: 'rgba(41, 98, 255, 0.8)', borderRadius: 2 },
-                { label: 'Total Liabilities', data: getRowValues('Total Liabilities'), backgroundColor: 'rgba(244, 67, 54, 0.8)', borderRadius: 2 }
+                { label: 'Total Assets', data: getRowValues('Total Assets'), backgroundColor: '#448AFF', borderRadius: 2 },
+                { label: 'Total Liabilities', data: getRowValues('Total Liabilities'), backgroundColor: '#4DD0E1', borderRadius: 2 }
             ];
         } 
         // --- C. WYKRES CASH FLOW (3 SŁUPKI, ZERO NA ŚRODKU) ---
@@ -1411,9 +1485,9 @@ function renderChart(tableData: any[], columns: string[]) {
             const finData = getRowValues('Financing Cash Flow');
 
             datasets = [
-                { label: 'Operating Cash Flow', data: opData, backgroundColor: 'rgba(0, 200, 83, 0.8)', borderRadius: 2 },
-                { label: 'Investing Cash Flow', data: invData, backgroundColor: 'rgba(41, 98, 255, 0.8)', borderRadius: 2 },
-                { label: 'Financing Cash Flow', data: finData, backgroundColor: 'rgba(255, 152, 0, 0.8)', borderRadius: 2 }
+                { label: 'Operating Cash Flow', data: opData, backgroundColor: '#448AFF', borderRadius: 2 },
+                { label: 'Investing Cash Flow', data: invData, backgroundColor: '#4DD0E1', borderRadius: 2 },
+                { label: 'Financing Cash Flow', data: finData, backgroundColor: '#F57F17', borderRadius: 2 }
             ];
 
             // Algorytm wymuszający oś 0 idealnie na środku
@@ -1617,4 +1691,198 @@ function renderGenericChart(canvasId: string, label: string, dates: string[], va
             interaction: { mode: 'index', intersect: false }
         }
     });
+}
+
+// ==========================================
+// --- MODUŁ EARNINGS (HISTORIA + PROGNOZY) ---
+// ==========================================
+// ==========================================
+// --- MODUŁ EARNINGS (HISTORIA + PROGNOZY) ---
+// ==========================================
+// ==========================================
+// --- MODUŁ EARNINGS (HISTORIA + PROGNOZY) ---
+// ==========================================
+function renderEarnings() {
+    if (!currentEarningsData) return;
+
+    // Niszczenie starych instancji wykresów
+    if (annualEarningsChartInstance) annualEarningsChartInstance.destroy();
+    if (quarterlyEarningsChartInstance) quarterlyEarningsChartInstance.destroy();
+
+    const trendData = currentEarningsData.trend || [];
+    const historyData = currentEarningsData.history || [];
+
+    // --- 1. RENDEROWANIE WYKRESU ROCZNEGO (TRADINGVIEW STYLE) ---
+    const ctxAnnual = document.getElementById('annual-earnings-chart') as HTMLCanvasElement;
+    if (ctxAnnual) {
+        const columns = getAnnualColumns(); 
+        const incomeData = processSecData(METRICS_MAP.income, columns);
+        const epsRow = incomeData.find(r => r.label === 'EPS (Basic)') ?? incomeData.find(r => r.label === 'Basic');
+
+        const aLabels: string[] = [];
+        const aActuals: (number | null)[] = [];
+        const aEstimates: (number | null)[] = [];
+
+        const currentYear = new Date().getFullYear();
+
+        // POPRAWKA: Pętla startująca zawsze od legendarnego 2009 roku!
+        const startYear = 2009;
+        for (let y = startYear; y < currentYear; y++) {
+            const yearStr = y.toString();
+            aLabels.push(yearStr);
+            const val = epsRow?.values[yearStr];
+            aActuals.push(val !== undefined ? val : null);
+            aEstimates.push(null); // Szare słupki są puste dla historii
+        }
+
+        // Prognozy Yahoo
+        const t0y = trendData.find((t: any) => t.period === '0y');
+        const t1y = trendData.find((t: any) => t.period === '+1y');
+
+        const eps0y = t0y?.earningsEstimate?.avg;
+        const eps1y = t1y?.earningsEstimate?.avg;
+
+
+        // Szary słupek 1: Rok bieżący (0y)
+        aLabels.push(currentYear.toString());
+        aActuals.push(null);
+        aEstimates.push(eps0y != null ? eps0y : null);
+
+        // Szary słupek 2: Przyszły rok (+1y)
+        aLabels.push((currentYear + 1).toString());
+        aActuals.push(null);
+        aEstimates.push(eps1y != null ? eps1y : null);
+
+
+
+        annualEarningsChartInstance = new Chart(ctxAnnual, {
+            type: 'bar',
+            data: {
+                labels: aLabels,
+                datasets: [
+                    {
+                        label: 'Zgłoszono (Rzeczywisty)',
+                        data: aActuals,
+                        backgroundColor: '#2962FF',
+                        borderRadius: 2,
+                        barPercentage: 0.6,
+                        categoryPercentage: 0.8
+                    },
+                    {
+                        label: 'Szacunkowo (Prognoza)',
+                        data: aEstimates,
+                        backgroundColor: 'rgba(150, 150, 150, 0.15)',
+                        borderColor: 'rgba(150, 150, 150, 0.4)',
+                        borderWidth: 1,
+                        borderRadius: 2,
+                        barPercentage: 0.6,
+                        categoryPercentage: 0.8
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'bottom', labels: { usePointStyle: true, pointStyle: 'circle' } },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context: any) {
+                                if (context.parsed.y == null) return null;
+                                return `${context.dataset.label}: $${context.parsed.y.toFixed(2)}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: { grid: { color: 'rgba(150, 150, 150, 0.1)' } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+    }
+
+    // --- 2. RENDEROWANIE WYKRESU KWARTALNEGO (TRAFIENIA W PROGNOZY) ---
+    const ctxQuarterly = document.getElementById('quarterly-earnings-chart') as HTMLCanvasElement;
+    if (ctxQuarterly) {
+        const validData = historyData.filter((d: any) => d.epsEstimate != null && d.epsActual != null);
+        
+        if (validData.length > 0) {
+            const qLabels = validData.map((d: any) => {
+                if (!d.quarter) return 'N/A';
+                const dateObj = new Date(d.quarter);
+                if (isNaN(dateObj.getTime())) return d.quarter;
+                const q = Math.floor(dateObj.getMonth() / 3) + 1;
+                return `Q${q} '${dateObj.getFullYear().toString().slice(-2)}`;
+            });
+
+            const qEstimates = validData.map((d: any) => d.epsEstimate);
+            const qActuals = validData.map((d: any) => d.epsActual);
+
+            quarterlyEarningsChartInstance = new Chart(ctxQuarterly, {
+                type: 'bar',
+                data: {
+                    labels: qLabels,
+                    datasets: [
+                        {
+                            label: 'Prognoza',
+                            data: qEstimates,
+                            backgroundColor: 'rgba(150, 150, 150, 0.3)',
+                            borderColor: 'rgba(150, 150, 150, 0.8)',
+                            borderWidth: 1,
+                            borderRadius: 4,
+                            barPercentage: 0.8,
+                            categoryPercentage: 0.8
+                        },
+                        {
+                            label: 'Rzeczywistość',
+                            data: qActuals,
+                            backgroundColor: (context: any) => {
+                                const index = context.dataIndex;
+                                return qActuals[index] >= qEstimates[index] ? 'rgba(60, 216, 89, 0.8)' : 'rgba(255, 82, 82, 0.8)';
+                            },
+                            borderColor: (context: any) => {
+                                const index = context.dataIndex;
+                                return qActuals[index] >= qEstimates[index] ? 'rgba(60, 216, 89, 1)' : 'rgba(255, 82, 82, 1)';
+                            },
+                            borderWidth: 1,
+                            borderRadius: 4,
+                            barPercentage: 0.8,
+                            categoryPercentage: 0.8
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context: any) {
+                                    return context.dataset.label + ': $' + context.parsed.y.toFixed(2);
+                                },
+                                afterLabel: function(context: any) {
+                                    if (context.datasetIndex === 1) { 
+                                        const surprise = validData[context.dataIndex].surprisePercent;
+                                        if (surprise != null) {
+                                            const sign = surprise > 0 ? '+' : '';
+                                            return `Zaskoczenie: ${sign}${(surprise * 100).toFixed(2)}%`;
+                                        }
+                                    }
+                                    return null;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { grid: { color: 'rgba(150, 150, 150, 0.1)' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+    }
 }
