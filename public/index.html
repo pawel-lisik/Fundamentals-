@@ -67,8 +67,10 @@
                         </div>
                     </div>
                     <h3>Leading Indicators</h3>
-                    
+
                     <h3>Lagging Indicators</h3>
+                    <!-- Sekcja: Grid Wskaźników Makro -->
+
                     <!-- Sekcja: Grid Wskaźników Makro -->
                     <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
                         <div class="macro-card">
@@ -76,7 +78,7 @@
                             <div class="macro-chart-box"><canvas id="macro-gdp-chart"></canvas></div>
                         </div>
                         <div class="macro-card">
-                            <h3 class="macro-card-title">Stopy procentowe (Rentowność 10Y)</h3>
+                            <h3 class="macro-card-title">Główna stopa procentowa</h3>
                             <div class="macro-chart-box"><canvas id="macro-rates-chart"></canvas></div>
                         </div>
                         <div class="macro-card">
@@ -87,10 +89,27 @@
                             <h3 class="macro-card-title">Stopa bezrobocia</h3>
                             <div class="macro-chart-box"><canvas id="macro-unemployment-chart"></canvas></div>
                         </div>
-                        <!-- Zmiana zatrudnienia rozciąga się na 2 kolumny -->
                         <div class="macro-card" style="grid-column: span 2;">
                             <h3 class="macro-card-title">Zmiana zatrudnienia (Nowe miejsca pracy)</h3>
                             <div class="macro-chart-box"><canvas id="macro-jobs-chart"></canvas></div>
+                        </div>
+                        
+                        <!-- NOWE KAFELKI -->
+                        <div class="macro-card">
+                            <h3 class="macro-card-title">PMI (Business Confidence)</h3>
+                            <div class="macro-chart-box"><canvas id="macro-pmi-chart"></canvas></div>
+                        </div>
+                        <div class="macro-card">
+                            <h3 class="macro-card-title">CCI (Consumer Sentiment)</h3>
+                            <div class="macro-chart-box"><canvas id="macro-cci-chart"></canvas></div>
+                        </div>
+                        <div class="macro-card">
+                            <h3 class="macro-card-title">Jobless Claims (Zasiłki / Bezrobotni)</h3>
+                            <div class="macro-chart-box"><canvas id="macro-jclaims-chart"></canvas></div>
+                        </div>
+                        <div class="macro-card">
+                            <h3 class="macro-card-title">Bilans handlowy (Export vs Import)</h3>
+                            <div class="macro-chart-box"><canvas id="macro-trade-chart"></canvas></div>
                         </div>
                     </div>
 

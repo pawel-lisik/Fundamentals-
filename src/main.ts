@@ -357,24 +357,34 @@ ipcMain.handle('get-similar-companies', async (event, ticker: string) => {
 // --- NOWE: POBIERANIE DANYCH MAKRO Z ECONDB ---
 // --- NOWE: POBIERANIE DANYCH MAKRO Z FRED (Bank Rezerwy Federalnej) ---
 // --- NOWE: POBIERANIE DANYCH MAKRO Z FRED (Bank Rezerwy Federalnej) ---
+// --- POBIERANIE DANYCH MAKRO Z FRED (Bank Rezerwy Federalnej) ---
 ipcMain.handle('get-macro-data', async (event, countryCode: string) => {
     const results: any = {};
     
     // Mapowanie naszych wskaźników na identyfikatory baz FRED
+
     const seriesMap: Record<string, Record<string, string>> = {
         'US': {
-            'RGDP': 'GDPC1',             // PKB USA (Real Gross Domestic Product)
-            'Y10YD': 'FEDFUNDS',         // ZMIENIONE: Główna Stopa Procentowa USA (Fed Funds Rate)
-            'CPI': 'CPIAUCSL',           // Indeks CPI dla USA (Przeliczymy na inflację r/r)
-            'URATE': 'UNRATE',           // Bezrobocie USA
-            'EMP': 'PAYEMS'              // Zatrudnienie poza rolnictwem (Używane do "Nowych miejsc pracy")
+            'RGDP': 'GDPC1',             
+            'Y10YD': 'FEDFUNDS',         
+            'CPI': 'CPIAUCSL',           
+            'URATE': 'UNRATE',           
+            'EMP': 'PAYEMS',             
+            'PMI': 'INDPRO',             // ZMIENIONE: Produkcja Przemysłowa (Industrial Production)
+            'CCI': 'UMCSENT',            
+            'JCLAIMS': 'ICSA',           
+            'TRADE': 'BOPGSTB'           
         },
         'PL': {
-            'RGDP': 'CLVMNACSCAB1GQPL',  // PKB Polska
-            'Y10YD': 'IR3TIB01PLM156N',  // ZMIENIONE: Stopy krótkoterminowe PL (WIBOR 3M - najbliższe oficjalnym stopom NBP w bazie FRED)
-            'CPI': 'CPALTT01PLM659N',    // Gotowa Inflacja r/r dla Polski (%)
-            'URATE': 'LRHUTTTTPLM156S',  // Bezrobocie Polska
-            'EMP': 'LFEMTTTTPQM647S'     // Zatrudnienie Polska
+            'RGDP': 'CLVMNACSCAB1GQPL',  
+            'Y10YD': 'IR3TIB01PLM156N',  
+            'CPI': 'CPALTT01PLM659N',    
+            'URATE': 'LRHUTTTTPLM156S',  
+            'EMP': 'LFEMTTTTPQM647S',    
+            'PMI': 'PRINTO01PLQ659S',    // ZMIENIONE: Produkcja Przemysłowa PL (wzrost r/r)
+            'CCI': 'CSCICP03PLM665S',    
+            'JCLAIMS': 'LFUNTTTTPLM647S',
+            'TRADE': 'XTNTVA01PLM667S'   
         }
     };
 
@@ -385,7 +395,6 @@ ipcMain.handle('get-macro-data', async (event, countryCode: string) => {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
     };
 
-    // Pobieramy proste pliki CSV bezpośrednio z serwerów Rezerwy Federalnej
     for (const [indicator, seriesId] of Object.entries(countrySeries)) {
         try {
             const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${seriesId}`;
@@ -393,13 +402,11 @@ ipcMain.handle('get-macro-data', async (event, countryCode: string) => {
             
             if (response.ok) {
                 const text = await response.text();
-                // Dzielimy plik CSV na linie i pomijamy pierwszy wiersz (nagłówek)
                 const lines = text.trim().split('\n').slice(1); 
                 
                 let dates: string[] = [];
                 let values: number[] = [];
 
-                // Parsujemy plik CSV w locie
                 for (const line of lines) {
                     const parts = line.split(',');
                     if (parts.length === 2) {
@@ -411,9 +418,7 @@ ipcMain.handle('get-macro-data', async (event, countryCode: string) => {
                     }
                 }
 
-                // Obliczenia dla USA (ponieważ FRED zwraca tam surowe liczby, a my chcemy % i zmianę)
                 if (countryCode === 'US' && indicator === 'CPI') {
-                    // Obliczanie inflacji rok-do-roku
                     const yoyDates = [];
                     const yoyVals = [];
                     for (let i = 12; i < values.length; i++) {
@@ -424,7 +429,6 @@ ipcMain.handle('get-macro-data', async (event, countryCode: string) => {
                     dates = yoyDates;
                     values = yoyVals;
                 } else if ((countryCode === 'US' || countryCode === 'PL') && indicator === 'EMP') {
-                    // Zmiana zatrudnienia miesiąc do miesiąca
                     const diffDates = [];
                     const diffVals = [];
                     for (let i = 1; i < values.length; i++) {
@@ -435,10 +439,13 @@ ipcMain.handle('get-macro-data', async (event, countryCode: string) => {
                     values = diffVals;
                 }
 
-                // Obcinamy do ostatnich 120 punktów (około 10 lat) i gotowe!
+                // Amerykańskie Jobless Claims są cotygodniowe. 
+                // Zeby mieć 10 lat na wykresie, potrzebujemy 520 punktów zamiast standardowych 120.
+                const limit = (countryCode === 'US' && indicator === 'JCLAIMS') ? 520 : 120;
+
                 results[indicator] = {
-                    dates: dates.slice(-120),
-                    values: values.slice(-120)
+                    dates: dates.slice(-limit),
+                    values: values.slice(-limit)
                 };
             } else {
                 results[indicator] = null;

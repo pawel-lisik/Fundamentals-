@@ -781,14 +781,14 @@ function renderData() {
     // Zabezpieczenie przed brakiem definicji dla nowych pustych zakładek (macro)
     if (!metricsToUse) return; 
 
-    const tableData = processSecData(metricsToUse, columns);
+const tableData = processSecData(metricsToUse, columns);
     renderCleanTable(tableData, columns);
 
-    const incomeData = (currentMainTab === 'statements' && currentTab === 'income') 
+    const chartData = currentMainTab === 'statements' 
         ? tableData 
         : processSecData(METRICS_MAP.income, columns);
         
-    renderChart(incomeData, columns);
+    renderChart(chartData, columns);
 }
 
 // ZAKTUALIZOWANE OBLICZENIA W processSecData
@@ -1360,25 +1360,98 @@ function renderChart(tableData: any[], columns: string[]) {
         });
     }
 
+
     // ============================================================
     // 3. STATEMENTS
     // ============================================================
     else {
         const chartLabels = [...columns].reverse();
-        const revRow = tableData.find(r => r.label === 'Revenue');
-        const incRow = tableData.find(r => r.label === 'Net income');
         
-        const revValues = chartLabels.map(col => revRow?.values[col] || 0);
-        const incValues = chartLabels.map(col => incRow?.values[col] || 0);
+        let datasets: any[] = [];
+        let yScaleOptions: any = {
+            ticks: {
+                callback: function(value: any) {
+                    if (value >= 1.0e9 || value <= -1.0e9) return ((value / 1.0e9).toFixed(1) + 'B');
+                    if (value >= 1.0e6 || value <= -1.0e6) return ((value / 1.0e6).toFixed(1) + 'M');
+                    return value;
+                }
+            },
+            grid: {
+                color: 'rgba(150, 150, 150, 0.1)'
+            }
+        };
 
+        // Funkcja pomocnicza do błyskawicznego wyciągania wierszy z tabeli do wykresu
+        const getRowValues = (labelToFind: string) => {
+            const row = tableData.find(r => r.label === labelToFind);
+            return chartLabels.map(col => row?.values[col] || 0);
+        };
+
+        // --- A. WYKRES INCOME STATEMENT (5 SŁUPKÓW) ---
+        if (currentTab === 'income') {
+            datasets = [
+                { label: 'Revenue', data: getRowValues('Revenue'), backgroundColor: 'rgba(41, 98, 255, 0.8)', borderRadius: 2 },
+                { label: 'Gross profit', data: getRowValues('Gross profit'), backgroundColor: 'rgba(0, 188, 212, 0.8)', borderRadius: 2 },
+                { label: 'Operating income', data: getRowValues('Operating income'), backgroundColor: 'rgba(255, 152, 0, 0.8)', borderRadius: 2 },
+                { label: 'Income before tax', data: getRowValues('Income before income tax'), backgroundColor: 'rgba(156, 39, 176, 0.8)', borderRadius: 2 },
+                { label: 'Net income', data: getRowValues('Net income'), backgroundColor: 'rgba(0, 200, 83, 0.8)', borderRadius: 2 }
+            ];
+        } 
+        // --- B. WYKRES BALANCE SHEET (2 SŁUPKI) ---
+        else if (currentTab === 'balance') {
+            datasets = [
+                { label: 'Total Assets', data: getRowValues('Total Assets'), backgroundColor: 'rgba(41, 98, 255, 0.8)', borderRadius: 2 },
+                { label: 'Total Liabilities', data: getRowValues('Total Liabilities'), backgroundColor: 'rgba(244, 67, 54, 0.8)', borderRadius: 2 }
+            ];
+        } 
+        // --- C. WYKRES CASH FLOW (3 SŁUPKI, ZERO NA ŚRODKU) ---
+        else if (currentTab === 'cashflow') {
+            const opData = getRowValues('Operating Cash Flow');
+            const invData = getRowValues('Investing Cash Flow');
+            const finData = getRowValues('Financing Cash Flow');
+
+            datasets = [
+                { label: 'Operating Cash Flow', data: opData, backgroundColor: 'rgba(0, 200, 83, 0.8)', borderRadius: 2 },
+                { label: 'Investing Cash Flow', data: invData, backgroundColor: 'rgba(41, 98, 255, 0.8)', borderRadius: 2 },
+                { label: 'Financing Cash Flow', data: finData, backgroundColor: 'rgba(255, 152, 0, 0.8)', borderRadius: 2 }
+            ];
+
+            // Algorytm wymuszający oś 0 idealnie na środku
+            let maxAbs = 0;
+            [...opData, ...invData, ...finData].forEach(val => {
+                if (Math.abs(val) > maxAbs) maxAbs = Math.abs(val);
+            });
+            maxAbs = maxAbs * 1.1; // Dodajemy 10% marginesu u góry i dołu by słupki nie dotykały sufitu
+            
+            if (maxAbs === 0) maxAbs = 1000; // Zabezpieczenie na wypadek braku jakichkolwiek danych
+
+            yScaleOptions.min = -maxAbs;
+            yScaleOptions.max = maxAbs;
+            
+            // Pogrubiamy i rozjaśniamy linię 0, by była wyraźnym punktem odniesienia
+            yScaleOptions.grid = {
+                color: (context: any) => {
+                    if (context.tick.value === 0) return 'rgba(150, 150, 150, 0.5)'; 
+                    return 'rgba(150, 150, 150, 0.1)';
+                },
+                lineWidth: (context: any) => {
+                    if (context.tick.value === 0) return 2;
+                    return 1;
+                }
+            };
+            datasets = datasets.map(ds => ({
+                ...ds,
+                categoryPercentage: 0.50, // Zajmuje 60% miejsca dla roku (40% to pusty odstęp między latami)
+                barPercentage: 0.95       // Słupki zajmują 95% swojego klastra (są bardzo blisko siebie)
+                }));
+        }
+
+        // Rysujemy finalny wykres
         chartInstance = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: chartLabels,
-                datasets: [
-                    { label: 'Revenue', data: revValues, backgroundColor: 'rgba(41, 98, 255, 0.8)', borderRadius: 2 },
-                    { label: 'Net Income', data: incValues, backgroundColor: 'rgba(0, 200, 83, 0.8)', borderRadius: 2 }
-                ]
+                datasets: datasets
             },
             options: {
                 responsive: true,
@@ -1395,15 +1468,7 @@ function renderChart(tableData: any[], columns: string[]) {
                 },
                 scales: {
                     x: { grid: { display: false } },
-                    y: {
-                        ticks: {
-                            callback: function(value: any) {
-                                if (value >= 1.0e9 || value <= -1.0e9) return ((value / 1.0e9).toFixed(1) + 'B');
-                                if (value >= 1.0e6 || value <= -1.0e6) return ((value / 1.0e6).toFixed(1) + 'M');
-                                return value;
-                            }
-                        }
-                    }
+                    y: yScaleOptions
                 }
             }
         });
@@ -1499,13 +1564,21 @@ async function loadMacroData() {
         const data = await (window as any).electronAPI.getMacroData(currentMacroCountry);
         
         if (data.RGDP) renderGenericChart('macro-gdp-chart', 'PKB (Real)', data.RGDP.dates, data.RGDP.values, '#2962FF', false);
-        
-        // ZMIEŃ TUTAJ ETYKIETĘ WYKRESU:
         if (data.Y10YD) renderGenericChart('macro-rates-chart', 'Główna stopa procentowa (%)', data.Y10YD.dates, data.Y10YD.values, '#FFB300', false);
-        
         if (data.CPI) renderGenericChart('macro-inflation-chart', 'Inflacja CPI r/r (%)', data.CPI.dates, data.CPI.values, '#FF5252', false);
         if (data.URATE) renderGenericChart('macro-unemployment-chart', 'Bezrobocie (%)', data.URATE.dates, data.URATE.values, '#9C27B0', false);
         if (data.EMP) renderGenericChart('macro-jobs-chart', 'Zmiana zatrudnienia', data.EMP.dates, data.EMP.values, '#00E676', true);
+
+        // --- NOWE WSKAŹNIKI ---
+        if (data.PMI) renderGenericChart('macro-pmi-chart', 'Produkcja Przemysłowa', data.PMI.dates, data.PMI.values, '#00B0FF', false);
+        if (data.CCI) renderGenericChart('macro-cci-chart', 'Consumer Confidence', data.CCI.dates, data.CCI.values, '#FF9100', false);
+        
+        // Zmiana nazwy w zależności od kraju
+        const jClaimsLabel = currentMacroCountry === 'US' ? 'Initial Jobless Claims (Tygodniowe)' : 'Całkowita liczba bezrobotnych';
+        if (data.JCLAIMS) renderGenericChart('macro-jclaims-chart', jClaimsLabel, data.JCLAIMS.dates, data.JCLAIMS.values, '#F50057', false);
+        
+        // Bilans handlowy jest renderowany jako wykres słupkowy (true), żeby łatwo zobaczyć deficyt (czerwone/zielone słupki na osi O)
+        if (data.TRADE) renderGenericChart('macro-trade-chart', 'Bilans handlowy', data.TRADE.dates, data.TRADE.values, '#651FFF', true);
 
     } catch (e) {
         console.error("Błąd pobierania makroekonomii:", e);
