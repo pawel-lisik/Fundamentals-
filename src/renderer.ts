@@ -1689,13 +1689,13 @@ function renderChart(tableData: any[], columns: string[]) {
 }
 
 function getAnnualColumns(): string[] {
-    return Array.from({ length: YEARS_TO_FETCH }, (_, i) => (currentYear - 1 - i).toString());
+    return Array.from({ length: YEARS_TO_FETCH }, (_, i) => (currentYear - i).toString());
 }
 
 function getQuarterlyColumns(): string[] {
     const cols: string[] = [];
     for (let i = 0; i < YEARS_TO_FETCH; i++) {
-        const y = currentYear - 1 - i;
+        const y = currentYear - i;
         cols.push(`${y} Q4`, `${y} Q3`, `${y} Q2`, `${y} Q1`);
     }
     return cols;
