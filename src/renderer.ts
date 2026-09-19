@@ -21,9 +21,9 @@ interface MetricDef {
 
 const METRICS_MAP: Record<string, MetricDef[]> = {
     income: [
-        { label: 'Revenue', tags: ['Revenues', 'NetRevenues', 'RevenuesNet', 'SalesRevenueNet', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'TotalRevenuesAndOtherIncome', 'SalesRevenueGoodsNet', 'SalesRevenueServicesNet', 'RevenueFromContractWithCustomerIncludingAssessedTax'], style: 'normal' },
+        { label: 'Revenue', tags: ['Revenues', 'NetRevenues', 'RevenuesNet', 'SalesRevenueNet', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'TotalRevenuesAndOtherIncome', 'SalesRevenueGoodsNet', 'SalesRevenueServicesNet', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'RevenuesNetOfInterestExpense', 'TotalRevenues', 'OperatingRevenues', 'FinancialServicesRevenue', 'InterestAndFeeIncome'], style: 'normal' },
         { label: 'Cost of revenue', tags: ['CostOfRevenue', 'CostOfGoodsAndServicesSold', 'CostOfGoodsSold'], style: 'normal' },
-        { label: 'Gross profit', tags: ['GrossProfit', 'GrossMargin'], style: 'total' },
+        { label: 'Gross profit', tags: ['GrossProfit', 'GrossMargin'], style: 'total' }, // Mastercard tego nie raportuje
         { label: 'space1', tags: [], style: 'empty' },
         { label: 'Operating expenses', tags: [], style: 'header' },
         { label: 'Research and development', tags: ['ResearchAndDevelopmentExpense', 'ResearchAndDevelopmentAndComputerSoftwareExpense'], style: 'sub' },
@@ -34,7 +34,17 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         { label: 'Other income, net', tags: ['OtherNonoperatingIncomeExpense'], style: 'normal' },
         { label: 'EBITDA', tags: [], style: 'normal' },
         { label: 'space3', tags: [], style: 'empty' },
-        { label: 'Income before income tax', tags: ['IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest'], style: 'normal' },
+        { 
+            label: 'Income before income tax', 
+            tags: [
+                'IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest',
+                'IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments', // Stary tag używany przez lata
+                'IncomeBeforeIncomeTaxes', // Standardowy, krótszy tag
+                'IncomeLossFromContinuingOperationsBeforeIncomeTaxesDomesticAndForeign', // Zapasowy tag dla korporacji międzynarodowych
+                'IncomeLossFromContinuingOperationsBeforeIncomeTaxes',
+            ], 
+            style: 'normal' 
+        },
         { label: 'Income tax expense', tags: ['IncomeTaxExpenseBenefit'], style: 'normal' },
         { label: 'Net income', tags: ['NetIncomeLoss', 'ProfitLoss'], style: 'total' },
         { label: 'space4', tags: [], style: 'empty' },
@@ -862,6 +872,10 @@ const columns = currentPeriod === 'annual' ? getAnnualColumns() : getQuarterlyCo
         if (tableContainerEl) {
             tableContainerEl.scrollLeft = tableContainerEl.scrollWidth;
         }
+        const chartScrollEl = document.getElementById('chart-scroll-area');
+        if (chartScrollEl && currentMainTab === 'statements') {
+            chartScrollEl.scrollLeft = chartScrollEl.scrollWidth;
+        }
     }, 50);
 }
 
@@ -1066,7 +1080,71 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     values[col] = netIncome + taxes + interest + da;
                 } else values[col] = null;
             } 
-            // 4. Standardowe zyski i przychody bazowe (Nie korygujemy o splity)
+            else if (def.label === 'Gross profit') {
+                const reportedGross = extractValue(def.tags, col);
+                if (reportedGross !== null) {
+                    values[col] = reportedGross; // Spółka podała wynik na tacy (np. Apple)
+                } else {
+                    // Wyliczamy ręcznie: Przychody - Koszty
+                    const revTags = METRICS_MAP.income.find(m => m.label === 'Revenue')?.tags || [];
+                    const costTags = METRICS_MAP.income.find(m => m.label === 'Cost of revenue')?.tags || [];
+                    
+                    const rev = extractValue(revTags, col);
+                    const cost = extractValue(costTags, col);
+                    
+                    // Jeśli mamy obie wartości, liczymy. W przypadku Mastercard 'cost' będzie null, 
+                    // więc poprawnie zwróci null (bo Mastercard nie ma COGS).
+                    if (rev !== null && cost !== null) {
+                        values[col] = rev - cost;
+                    } else {
+                        values[col] = null;
+                    }
+                }
+            }
+            // =================================================================
+            // 5. NOWE: Ręczne wyliczanie "Zysku operacyjnego" dla firm typu Single-Step
+            // =================================================================
+            else if (def.label === 'Operating income') {
+                const reportedOpInc = extractValue(def.tags, col);
+                if (reportedOpInc !== null) {
+                    values[col] = reportedOpInc;
+                } else {
+                    // Skoro nie podali Zysku Operacyjnego, szacujemy zysk wyliczając EBIT
+                    // (Zysk przed opodatkowaniem + zapłacone odsetki od długu)
+                    const ebtTags = METRICS_MAP.income.find(m => m.label === 'Income before income tax')?.tags || [];
+                    const ebt = extractValue(ebtTags, col);
+                    const interest = extractValue(['InterestExpense', 'InterestExpenseDebt', 'InterestExpenseNet'], col) || 0;
+                    
+                    if (ebt !== null) {
+                        values[col] = ebt + interest;
+                    } else {
+                        values[col] = null;
+                    }
+                }
+            }
+            else if (def.label === 'Revenue') {
+                const reportedRev = extractValue(def.tags, col);
+                
+                if (reportedRev !== null) {
+                    values[col] = reportedRev; // Mamy standardowy tag (np. Apple, Microsoft)
+                } else {
+                    // Instytucje finansowe często ukrywają sumę pod niestandardowym tagiem.
+                    // Składamy sumę z klocków US-GAAP: Przychody pozaodsetkowe + Odsetki netto
+                    const nonInterest = extractValue(['NoninterestIncome', 'FeesAndCommissions'], col) || 0;
+                    const netInterest = extractValue(['InterestIncomeExpenseNet', 'NetInterestIncome'], col) || 0;
+                    
+                    const totalCalculated = nonInterest + netInterest;
+                    
+                    // Jeśli znaleźliśmy jakiekolwiek dane bankowe, wstawiamy wynik
+                    if (totalCalculated !== 0) {
+                        values[col] = totalCalculated;
+                    } else {
+                        values[col] = null;
+                    }
+                }
+            }
+            // =================================================================
+            // 6. Standardowe zyski i przychody bazowe (Nie korygujemy o splity)
             else {
                 values[col] = extractValue(def.tags, col);
             }
@@ -1152,7 +1230,66 @@ function renderChart(tableData: any[], columns: string[]) {
     const ctx = document.getElementById('financial-chart') as HTMLCanvasElement;
     if (!ctx) return;
 
-    document.getElementById('chart-wrapper')!.style.display = 'block';
+    const chartWrapper = document.getElementById('chart-wrapper')!;
+    chartWrapper.style.display = 'block';
+
+    // Odbieramy głównemu wrapperowi scrollowanie (żeby legenda stała w miejscu)
+    chartWrapper.style.overflowX = 'hidden'; 
+    chartWrapper.style.position = 'relative';
+
+    // 1. KONTENER NA ZAMROŻONĄ LEGENDĘ (HTML)
+    let legendContainer = document.getElementById('custom-chart-legend');
+    if (!legendContainer) {
+        legendContainer = document.createElement('div');
+        legendContainer.id = 'custom-chart-legend';
+        legendContainer.style.display = 'flex';
+        legendContainer.style.justifyContent = 'center';
+        legendContainer.style.flexWrap = 'wrap';
+        legendContainer.style.gap = '16px';
+        legendContainer.style.marginBottom = '12px'; // Odstęp legendy od wykresu
+        
+        // Wstawiamy na sam szczyt chart-wrappera
+        chartWrapper.insertBefore(legendContainer, chartWrapper.firstChild);
+    }
+    legendContainer.innerHTML = ''; // Czyścimy przy każdym odświeżeniu
+
+    // 2. KONTENER Z PASKIEM PRZEWIJANIA 
+    let scrollArea = document.getElementById('chart-scroll-area');
+    if (!scrollArea) {
+        scrollArea = document.createElement('div');
+        scrollArea.id = 'chart-scroll-area';
+
+        // TUTAJ DODAJEMY WYSOKOŚĆ:
+        scrollArea.style.height = 'calc(100% - 40px)'; // 100% wysokości minus miejsce na legendę
+        scrollArea.style.minHeight = '350px';          // Bezpiecznik (ustaw np. na 350px lub 400px)
+        scrollArea.style.paddingBottom = '10px';
+        chartWrapper.insertBefore(scrollArea, legendContainer.nextSibling);
+    }
+
+    // 3. ELASTYCZNY KONTENER NA CANVAS
+    let innerContainer = document.getElementById('chart-inner-container');
+    if (!innerContainer) {
+        innerContainer = document.createElement('div');
+        innerContainer.id = 'chart-inner-container';
+        innerContainer.style.position = 'relative';
+        innerContainer.style.height = '100%'; 
+
+        scrollArea.appendChild(innerContainer);
+        innerContainer.appendChild(ctx);
+    }
+
+    // Zmiana szerokości w zależności od ilości danych w Statements
+    if (currentMainTab === 'statements') {
+        const pointsFor10Years = currentPeriod === 'quarterly' ? 40 : 10;
+        const widthPercent = Math.max(100, (columns.length / pointsFor10Years) * 100);
+        
+        innerContainer.style.width = `${widthPercent}%`;
+        scrollArea.style.overflowX = 'auto';
+        scrollArea.style.overflowY = 'hidden';
+    } else {
+        innerContainer.style.width = '100%';
+        scrollArea.style.overflowX = 'hidden';
+    }
 
     if (chartInstance) {
         chartInstance.destroy();
@@ -1182,7 +1319,6 @@ function renderChart(tableData: any[], columns: string[]) {
         if (rawPriceData && rawPriceData.length > 0) {
             for (const quote of rawPriceData) {
                 if (!quote.date) continue;
-
                 const dateObj = new Date(quote.date);
                 const yearStr = dateObj.getFullYear().toString();
                 const price = quote.close ?? quote.adjClose;
@@ -1211,13 +1347,8 @@ function renderChart(tableData: any[], columns: string[]) {
             }
         }
 
-        // ========================================================
-        // NORMALIZACJA WOLUMENU (Wolumen zajmuje do 66% obszaru Ceny)
-        // ========================================================
         const maxVolume = Math.max(...volumes, 1);
         const maxPrice = Math.max(...prices, 1);
-        
-        // ZMIEŃ TUTAJ JEŚLI CHCESZ INNĄ WYSOKOŚĆ (0.66 = 2/3 wysokości)
         const volumeHeight = maxPrice * 0.66; 
 
         const normalizedVolumes = volumes.map(volume => {
@@ -1234,33 +1365,25 @@ function renderChart(tableData: any[], columns: string[]) {
                         label: 'Price ($)',
                         data: prices,
                         borderColor: '#3CD859',
-                        // --- NOWY BACKGROUND COLOR (GRADIENT) ---
                         backgroundColor: (context: any) => {
                             const chart = context.chart;
-                            // Wyciągamy też skale (scales) z obiektu chart
                             const { ctx, chartArea, scales } = chart;
-                            
-                            // Zabezpieczenie: upewniamy się, że obszar i oś yPrice już istnieją
                             if (!chartArea || !scales['yPrice']) return null; 
                             
                             const yAxis = scales['yPrice'];
-                            
-                            // Tworzymy gradient od góry osi yPrice do dołu osi yPrice!
                             const gradient = ctx.createLinearGradient(0, yAxis.top, 0, yAxis.bottom);
                             
-                            // 0 to góra wykresu Ceny, 1 to dół wykresu Ceny
-                            gradient.addColorStop(0, 'rgba(60, 216, 89, 0.4)');  // Góra (możesz dać np. 0.4 żeby był mocniejszy)
-                            gradient.addColorStop(1, 'rgba(60, 216, 89, 0)');    // Dół (0 = w pełni przezroczysty)
+                            gradient.addColorStop(0, 'rgba(60, 216, 89, 0.4)');
+                            gradient.addColorStop(1, 'rgba(60, 216, 89, 0)');  
                             
                             return gradient;
                         },
-                        // ----------------------------------------
                         yAxisID: 'yPrice',
                         pointRadius: 0,
                         borderWidth: 2,
                         fill: true,
                         order: 1,
-                        tension: 0.2,             
+                        tension: 0.2,            
                         borderJoinStyle: 'round'  
                     },
                     {
@@ -1286,7 +1409,7 @@ function renderChart(tableData: any[], columns: string[]) {
                         spanGaps: true,
                         fill: true,
                         order: 3,
-                        tension: 0.2,             // Wygładza linię (wartości od 0 do 1)
+                        tension: 0.2,
                         borderJoinStyle: 'round'
                     }
                 ]
@@ -1301,7 +1424,6 @@ function renderChart(tableData: any[], columns: string[]) {
                         callbacks: {
                             label: function(context: any) {
                                 const datasetLabel = context.dataset.label;
-
                                 if (datasetLabel === 'Volume') {
                                     const index = context.dataIndex;
                                     const originalVolume = volumes[index] ?? 0;
@@ -1318,7 +1440,7 @@ function renderChart(tableData: any[], columns: string[]) {
                             }
                         }
                     },
-                    legend: { position: 'top', labels: { usePointStyle: true, pointStyle: 'rectRounded' } }
+                    legend: { display: false } // ZABRONIONA NATYWNA LEGENDA
                 },
                 scales: {
                     x: { ticks: { maxTicksLimit: 10 } },
@@ -1342,7 +1464,6 @@ function renderChart(tableData: any[], columns: string[]) {
             }
         });
     }
-
     // ============================================================
     // 2. INDICATORS
     // ============================================================
@@ -1386,14 +1507,12 @@ function renderChart(tableData: any[], columns: string[]) {
             }
         }
 
-        // --- NOWE: OBLICZANIE ŚREDNIEJ P/E ---
         let averagePE = 0;
         if (peDataPoints.length > 0) {
             const sumPE = peDataPoints.reduce((acc, val) => acc + val, 0);
             averagePE = sumPE / peDataPoints.length;
         }
         
-        // Generujemy tablicę dla linii średniej (każdy punkt ma tę samą wartość)
         const averageDataPoints = peDataPoints.map(() => averagePE);
 
         chartInstance = new Chart(ctx, {
@@ -1409,14 +1528,12 @@ function renderChart(tableData: any[], columns: string[]) {
                     pointRadius: 0,
                     fill: true
                 },
-
-                // --- NOWY ZBIÓR DANYCH: ŚREDNIA P/E ---
                 {
-                    label: `Średnie P/E (${averagePE.toFixed(2)})`, // Wyświetli np. "Średnie P/E (15.40)"
+                    label: `Średnie P/E (${averagePE.toFixed(2)})`, 
                     data: averageDataPoints,
-                    borderColor: 'rgba(255, 82, 82, 0.8)', // Czerwony kolor by się odcinał
+                    borderColor: 'rgba(255, 82, 82, 0.8)', 
                     borderWidth: 2,
-                    borderDash: [5, 5], // Przerywana linia
+                    borderDash: [5, 5], 
                     pointRadius: 0,
                     fill: false,
                 }]
@@ -1425,7 +1542,7 @@ function renderChart(tableData: any[], columns: string[]) {
                 responsive: true,
                 maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
-                plugins: { legend: { position: 'top' } },
+                plugins: { legend: { display: false } }, // ZABRONIONA NATYWNA LEGENDA
                 scales: {
                     x: { ticks: { maxTicksLimit: 10 } },
                     y: { grid: { color: '#f0f0f0' } }
@@ -1433,14 +1550,11 @@ function renderChart(tableData: any[], columns: string[]) {
             }
         });
     }
-
-
     // ============================================================
     // 3. STATEMENTS
     // ============================================================
     else {
         const chartLabels = [...columns];
-        
         let datasets: any[] = [];
         let yScaleOptions: any = {
             ticks: {
@@ -1455,13 +1569,11 @@ function renderChart(tableData: any[], columns: string[]) {
             }
         };
 
-        // Funkcja pomocnicza do błyskawicznego wyciągania wierszy z tabeli do wykresu
         const getRowValues = (labelToFind: string) => {
             const row = tableData.find(r => r.label === labelToFind);
             return chartLabels.map(col => row?.values[col] || 0);
         };
 
-        // --- A. WYKRES INCOME STATEMENT (5 SŁUPKÓW) ---
         if (currentTab === 'income') {
             datasets = [
                 { label: 'Revenue', data: getRowValues('Revenue'), backgroundColor: '#448AFF', borderRadius: 2 },
@@ -1471,14 +1583,12 @@ function renderChart(tableData: any[], columns: string[]) {
                 { label: 'Net income', data: getRowValues('Net income'), backgroundColor: '#FBC02D', borderRadius: 2 }
             ];
         } 
-        // --- B. WYKRES BALANCE SHEET (2 SŁUPKI) ---
         else if (currentTab === 'balance') {
             datasets = [
                 { label: 'Total Assets', data: getRowValues('Total Assets'), backgroundColor: '#448AFF', borderRadius: 2 },
                 { label: 'Total Liabilities', data: getRowValues('Total Liabilities'), backgroundColor: '#4DD0E1', borderRadius: 2 }
             ];
         } 
-        // --- C. WYKRES CASH FLOW (3 SŁUPKI, ZERO NA ŚRODKU) ---
         else if (currentTab === 'cashflow') {
             const opData = getRowValues('Operating Cash Flow');
             const invData = getRowValues('Investing Cash Flow');
@@ -1490,19 +1600,17 @@ function renderChart(tableData: any[], columns: string[]) {
                 { label: 'Financing Cash Flow', data: finData, backgroundColor: '#F57F17', borderRadius: 2 }
             ];
 
-            // Algorytm wymuszający oś 0 idealnie na środku
             let maxAbs = 0;
             [...opData, ...invData, ...finData].forEach(val => {
                 if (Math.abs(val) > maxAbs) maxAbs = Math.abs(val);
             });
-            maxAbs = maxAbs * 1.1; // Dodajemy 10% marginesu u góry i dołu by słupki nie dotykały sufitu
+            maxAbs = maxAbs * 1.1; 
             
-            if (maxAbs === 0) maxAbs = 1000; // Zabezpieczenie na wypadek braku jakichkolwiek danych
+            if (maxAbs === 0) maxAbs = 1000; 
 
             yScaleOptions.min = -maxAbs;
             yScaleOptions.max = maxAbs;
             
-            // Pogrubiamy i rozjaśniamy linię 0, by była wyraźnym punktem odniesienia
             yScaleOptions.grid = {
                 color: (context: any) => {
                     if (context.tick.value === 0) return 'rgba(150, 150, 150, 0.5)'; 
@@ -1515,12 +1623,11 @@ function renderChart(tableData: any[], columns: string[]) {
             };
             datasets = datasets.map(ds => ({
                 ...ds,
-                categoryPercentage: 0.50, // Zajmuje 60% miejsca dla roku (40% to pusty odstęp między latami)
-                barPercentage: 0.95       // Słupki zajmują 95% swojego klastra (są bardzo blisko siebie)
+                categoryPercentage: 0.50, 
+                barPercentage: 0.95 
                 }));
         }
 
-        // Rysujemy finalny wykres
         chartInstance = new Chart(ctx, {
             type: 'bar',
             data: {
@@ -1532,6 +1639,7 @@ function renderChart(tableData: any[], columns: string[]) {
                 maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
+                    legend: { display: false }, // ZABRONIONA NATYWNA LEGENDA
                     tooltip: {
                         callbacks: {
                             label: function(context: any) {
@@ -1546,6 +1654,37 @@ function renderChart(tableData: any[], columns: string[]) {
                 }
             }
         });
+    }
+
+    // ====================================================================
+    // 3. GENEROWANIE WŁASNEJ ZAMROŻONEJ LEGENDY HTML
+    // ====================================================================
+    if (chartInstance && legendContainer) {
+        const chartDatasets = chartInstance.data.datasets;
+        let html = '';
+        
+        chartDatasets.forEach((ds: any) => {
+            let color = '#888';
+            if (typeof ds.borderColor === 'string' && ds.borderColor !== 'transparent') {
+                color = ds.borderColor;
+            } else if (typeof ds.backgroundColor === 'string') {
+                color = ds.backgroundColor;
+            }
+            
+            // Reaguje nawet na Twoją linię przerywaną 'borderDash' z Indicators!
+            let borderStyle = ds.borderDash 
+                ? `border: 2px dashed ${color}; background: transparent; box-sizing: border-box;` 
+                : `background: ${color};`;
+
+            html += `
+                <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-primary, #e1e1e1); font-weight: 500;">
+                    <div style="width: 14px; height: 14px; border-radius: 3px; ${borderStyle}"></div>
+                    <span>${ds.label}</span>
+                </div>
+            `;
+        });
+        
+        legendContainer.innerHTML = html;
     }
 }
 
