@@ -11,4 +11,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSimilarCompanies: (ticker:string) => ipcRenderer.invoke('get-similar-companies', ticker),
     getMacroData: (countryCode: string) => ipcRenderer.invoke('get-macro-data', countryCode),
     getEarningsData: (ticker:string) => ipcRenderer.invoke('get-earnings-data', ticker),
+    getSplits: (ticker:string) => ipcRenderer.invoke('getSplits', ticker)
 });

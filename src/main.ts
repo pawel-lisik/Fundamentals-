@@ -477,3 +477,24 @@ ipcMain.handle('get-earnings-data', async (event, ticker: string) => {
         return { history: [], trend: [] };
     }
 });
+
+ipcMain.handle('getSplits', async (event, ticker) => {
+    try {
+        // Używamy nowej, wspieranej metody chart() zamiast przestarzałego historical()
+        const result = await yahooFinance.chart(ticker, { 
+            period1: '2000-01-01' 
+        });
+
+        // YahooFinance.chart() zwraca obiekt, w którym splity są głęboko zagnieżdżone: result.events.splits
+        // Jest to "słownik" (obiekt), którego kluczami są timestampy. My potrzebujemy zwykłej tablicy.
+        if (result && result.events && result.events.splits) {
+            const splitsArray = Object.values(result.events.splits);
+            return splitsArray; // Zwróci tablicę obiektów np. { date: Date, numerator: 4, denominator: 1 }
+        }
+        
+        return [];
+    } catch (error) {
+        console.error(`Błąd podczas pobierania splitów dla ${ticker}:`, error);
+        return [];
+    }
+});

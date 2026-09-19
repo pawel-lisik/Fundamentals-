@@ -1,5 +1,6 @@
 declare const Chart: any;
 let sectorPriceData: any[] | null = null;
+let periodEndDates: Record<string, number> = {};
 
 let chartInstance: any = null; // Przechowuje instancję wykresu do jej niszczenia prz
 let peChartInstance: any = null;
@@ -100,7 +101,7 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
             style: 'normal' 
         }
     ],
-    indicators: [
+indicators: [
         { label: 'Return on Equity (ROE)', tags: [], style: 'normal', format: 'percent' },
         { label: 'Return on Assets (ROA)', tags: [], style: 'normal', format: 'percent' },
         { label: 'Return on Invested Capital (ROIC)', tags: [], style: 'normal', format: 'percent' },
@@ -108,7 +109,7 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         { label: 'Current Ratio', tags: [], style: 'normal', format: 'ratio' },
         { label: 'Debt Ratio', tags: [], style: 'normal', format: 'percent' },
         { label: 'space2', tags: [], style: 'empty' },
-        { label: 'EPS (Basic)', tags: ['EarningsPerShareBasic', 'EarningsPerShareDiluted'], style: 'normal', format: 'decimal' },
+        { label: 'EPS (Diluted)', tags: ['EarningsPerShareDiluted', 'EarningsPerShareBasic'], style: 'normal', format: 'decimal' },
         { label: 'P/E Ratio', tags: [], style: 'normal', format: 'missing_price' },
         { label: 'P/BV Ratio', tags: [], style: 'normal', format: 'missing_price' }
     ],
@@ -374,6 +375,8 @@ async function renderWatchlist() {
 let rawPriceData: any[] | null = null; // Przechowuje historię notowań
 let currentQuoteInfo: any = null; 
 
+let rawSplitsData: any[] | null = null; // <-- NOWE: Przechowuje dokładne splity
+
 async function loadSecData(ticker: string) {
     if (!ticker) return;
 
@@ -388,14 +391,16 @@ async function loadSecData(ticker: string) {
     if (chartWrapper) chartWrapper.style.display = 'none';
 
     try {
-        // POBIERANIE RÓWNOLEGŁE 4 ŹRÓDEŁ
-        const [secRes, priceRes, quoteRes, newsRes, similarRes, earningsRes] = await Promise.all([
+        // POBIERANIE RÓWNOLEGŁE (Dodane getSplits)
+        const [secRes, priceRes, quoteRes, newsRes, similarRes, earningsRes, splitsRes] = await Promise.all([
             (window as any).electronAPI.fetchSecData(ticker),
             (window as any).electronAPI.getHistoricalPrices(ticker),
-            (window as any).electronAPI.getYahooQuote(ticker), // Pobiera aktualne wskaźniki
-            (window as any).electronAPI.getCompanyNews(ticker), // Pobiera wiadomości firmy
+            (window as any).electronAPI.getYahooQuote(ticker),
+            (window as any).electronAPI.getCompanyNews(ticker),
             (window as any).electronAPI.getSimilarCompanies(ticker),
-            (window as any).electronAPI.getEarningsData(ticker)
+            (window as any).electronAPI.getEarningsData(ticker),
+            // Używamy opcjonalnego wywołania, na wypadek gdyby API jeszcze nie istniało w main.ts
+            (window as any).electronAPI.getSplits ? (window as any).electronAPI.getSplits(ticker) : Promise.resolve([]) 
         ]);
         
         rawSecData = secRes;
@@ -404,8 +409,8 @@ async function loadSecData(ticker: string) {
         currentNews = newsRes;
         similarCompaniesData = similarRes;
         currentEarningsData = earningsRes;
+        rawSplitsData = splitsRes || []; // <-- Zapis splitów
 
-        // --- NOWE: POBIERANIE HISTORII SEKTORA (ETF) ---
         if (currentQuoteInfo && currentQuoteInfo.sector) {
             sectorPriceData = await (window as any).electronAPI.getSectorHistoricalPrices(currentQuoteInfo.sector);
         } else {
@@ -413,7 +418,7 @@ async function loadSecData(ticker: string) {
         }
         
         renderData();
-        updateWatchlistButtonState(); // Zostaje samo odświeżenie przycisku
+        updateWatchlistButtonState();
     } catch (error) {
         alert('Wystąpił błąd podczas pobierania danych. Sprawdź konsolę.');
         console.error(error);
@@ -949,6 +954,62 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
         return null;
     };
 
+    // --- NOWY, PRECYZYJNY SYSTEM SPLITÓW (OPARTY O YAHOO FINANCE I DATY SEC) ---
+    const splitFactors: Record<string, number> = {};
+    
+    columns.forEach(col => {
+        const isQuarterlyMode = col.includes('Q');
+        const yearStr = col.substring(0, 4);
+        const year = parseInt(yearStr);
+        const quarterStr = isQuarterlyMode ? col.substring(5, 7) : null;
+        
+        let targetTime: number | null = null;
+        
+        // Szukamy dokładnej daty w danych SEC (NetIncomeLoss lub Assets) aby zignorować przesunięcia roku fiskalnego
+        for (const tag of ['NetIncomeLoss', 'ProfitLoss', 'Assets']) {
+            const unitData = rawData[tag]?.units?.USD;
+            if (unitData) {
+                let items = unitData.filter((item: any) => item.fy === year);
+                if (isQuarterlyMode) {
+                    items = items.filter((item: any) => item.fp === (quarterStr === 'Q4' ? 'FY' : quarterStr));
+                } else {
+                    items = items.filter((item: any) => item.fp === 'FY' || item.form === '10-K');
+                }
+                if (items.length > 0) {
+                    items.sort((a: any, b: any) => new Date(a.filed).getTime() - new Date(b.filed).getTime());
+                    targetTime = new Date(items[items.length - 1].end).getTime();
+                    break;
+                }
+            }
+        }
+
+        // Fallback, jeśli brakuje danych w SEC
+        if (!targetTime) {
+            let month = 11, day = 31;
+            if (quarterStr === 'Q1') { month = 2; day = 31; }
+            else if (quarterStr === 'Q2') { month = 5; day = 30; }
+            else if (quarterStr === 'Q3') { month = 8; day = 30; }
+            targetTime = new Date(year, month, day).getTime();
+        }
+
+        periodEndDates[col] = targetTime; // Zapisujemy dla wykresów!
+
+        let cumulativeSplit = 1.0;
+        if (rawSplitsData && rawSplitsData.length > 0) {
+            for (const split of rawSplitsData) {
+                // split.date może być Unix timestampem (sekundy) lub stringiem/Date
+                const splitTime = (split.date instanceof Date) 
+                    ? split.date.getTime() 
+                    : (typeof split.date === 'number' ? split.date * 1000 : new Date(split.date).getTime());
+                
+                if (splitTime > targetTime) {
+                    cumulativeSplit *= (split.numerator / split.denominator);
+                }
+            }
+        }
+        splitFactors[col] = cumulativeSplit;
+    });
+
     // Główna funkcja ekstrakcji z wbudowaną dedukcją Q4 i Cash Flow
     const extractValue = (tags: string[], col: string) => {
         const isQuarterlyMode = col.includes('Q');
@@ -957,26 +1018,26 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
 
         const isBalance = METRICS_MAP.balance.some(m => m.tags.some(t => tags.includes(t)));
         const isCashFlow = METRICS_MAP.cashflow.some(m => m.tags.some(t => tags.includes(t)));
+        const isPerShare = tags.some(t => t.includes('PerShare')); // <--- Sprawdzamy czy to EPS/DPS
 
         let val = getRawValue(tags, year, isQuarterlyMode, quarterStr, isCashFlow);
 
         if (isQuarterlyMode && !isBalance) {
             if (isCashFlow) {
                 // Cash Flow z SEC jest w formacie narastającym (YTD).
-                // Aby otrzymać pojedyncze kwartały, wyliczamy je matematycznie z różnic.
                 if (quarterStr === 'Q2') {
                     const q1 = getRawValue(tags, year, true, 'Q1', true);
-                    const q2ytd = getRawValue(tags, year, true, 'Q2', true); // Stan po 6 mies.
+                    const q2ytd = getRawValue(tags, year, true, 'Q2', true); 
                     if (q2ytd !== null && q1 !== null) val = q2ytd - q1;
                 } 
                 else if (quarterStr === 'Q3') {
-                    const q2ytd = getRawValue(tags, year, true, 'Q2', true); // Stan po 6 mies.
-                    const q3ytd = getRawValue(tags, year, true, 'Q3', true); // Stan po 9 mies.
+                    const q2ytd = getRawValue(tags, year, true, 'Q2', true); 
+                    const q3ytd = getRawValue(tags, year, true, 'Q3', true); 
                     if (q3ytd !== null && q2ytd !== null) val = q3ytd - q2ytd;
                 } 
                 else if (quarterStr === 'Q4') {
-                    const fy = getRawValue(tags, year, false, null); // Cały rok (12 mies.)
-                    const q3ytd = getRawValue(tags, year, true, 'Q3', true); // Stan po 9 mies.
+                    const fy = getRawValue(tags, year, false, null); 
+                    const q3ytd = getRawValue(tags, year, true, 'Q3', true); 
                     if (fy !== null && q3ytd !== null) val = fy - q3ytd;
                 }
             } else {
@@ -988,7 +1049,25 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     const q3 = getRawValue(tags, year, true, 'Q3', false);
 
                     if (fy !== null && q1 !== null && q2 !== null && q3 !== null) {
-                        val = fy - (q1 + q2 + q3);
+                        if (isPerShare) {
+                            // --- ROZWIĄZANIE PROBLEMU: Znormalizowanie splitów przed odejmowaniem ---
+                            const splitFY = splitFactors[`${year} Q4`] || 1.0;
+                            const splitQ1 = splitFactors[`${year} Q1`] || 1.0;
+                            const splitQ2 = splitFactors[`${year} Q2`] || 1.0;
+                            const splitQ3 = splitFactors[`${year} Q3`] || 1.0;
+
+                            const normFY = fy / splitFY;
+                            const normQ1 = q1 / splitQ1;
+                            const normQ2 = q2 / splitQ2;
+                            const normQ3 = q3 / splitQ3;
+
+                            const normQ4 = normFY - (normQ1 + normQ2 + normQ3);
+
+                            // Główna pętla niżej dzieli wynik przez splitFactors[col], odwracamy operację dla spójności
+                            val = normQ4 * splitFY;
+                        } else {
+                            val = fy - (q1 + q2 + q3);
+                        }
                     }
                 }
             }
@@ -996,50 +1075,6 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
 
         return val;
     };
-
-    // --- SYSTEM WYKRYWANIA SPLITÓW ---
-    // (reszta Twojego kodu pozostaje bez zmian)
-
-    // --- SYSTEM WYKRYWANIA SPLITÓW ---
-    const impliedShares: Record<string, number> = {};
-    columns.forEach(col => {
-        const year = parseInt(col.substring(0, 4));
-        if (!col.includes('Q')) {
-            const eps = extractValue(['EarningsPerShareDiluted', 'EarningsPerShareBasic'], col);
-            const ni = extractValue(['NetIncomeLoss', 'ProfitLoss'], col);
-            if (eps && ni && eps !== 0) {
-                impliedShares[year.toString()] = ni / eps;
-            }
-        }
-    });
-
-    const splitFactors: Record<string, number> = {};
-    let currentMultiplier = 1.0;
-    const years = Object.keys(impliedShares).sort((a, b) => parseInt(b) - parseInt(a));
-
-    for (let i = 0; i < years.length; i++) {
-        const yearStr = years[i];
-        splitFactors[yearStr] = currentMultiplier;
-
-        if (i < years.length - 1) {
-            const prevYearStr = years[i + 1];
-            const sharesNow = impliedShares[yearStr];
-            const sharesPrev = impliedShares[prevYearStr];
-
-            if (sharesNow && sharesPrev && sharesPrev !== 0) {
-                const ratio = sharesNow / sharesPrev;
-                if (ratio > 1.35 || ratio < 0.75) {
-                    let splitRatio = 1;
-                    if (ratio > 1) {
-                        splitRatio = Math.round(ratio * 2) / 2;
-                    } else {
-                        splitRatio = 1 / (Math.round((1 / ratio) * 2) / 2);
-                    }
-                    currentMultiplier *= splitRatio;
-                }
-            }
-        }
-    }
 
     const getTTMValue = (tags: string[], colIndex: number) => {
         if (currentPeriod === 'annual') return extractValue(tags, columns[colIndex]);
@@ -1053,18 +1088,14 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
         return ttmSum;
     };
 
-    const getClosestPrice = (year: number, quarterStr: string | null) => {
-        if (!rawPriceData || rawPriceData.length === 0) return null;
-        let targetMonth = 11, targetDay = 31;
-        if (quarterStr === 'Q1') { targetMonth = 2; targetDay = 31; } 
-        else if (quarterStr === 'Q2') { targetMonth = 5; targetDay = 30; } 
-        else if (quarterStr === 'Q3') { targetMonth = 8; targetDay = 30; } 
+    const getClosestPrice = (targetTime: number | null) => {
+        if (!rawPriceData || rawPriceData.length === 0 || !targetTime) return null;
+        const lookupTime = targetTime + (45 * 86400000); 
 
-        const targetTime = new Date(year, targetMonth, targetDay).getTime();
         for (let i = rawPriceData.length - 1; i >= 0; i--) {
             const quote = rawPriceData[i];
             if (!quote || !quote.date) continue;
-            if (new Date(quote.date).getTime() <= targetTime) {
+            if (new Date(quote.date).getTime() <= lookupTime) {
                 return quote.close ?? quote.adjClose ?? null;
             }
         }
@@ -1085,12 +1116,12 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
             const yearStr = col.substring(0, 4);
             const quarterStr = isQuarterlyMode ? col.substring(5, 7) : null;
             
-            const splitFactor = splitFactors[yearStr] || 1.0;
-            const prevCol = columns[i + 1]; 
-
+            const splitFactor = splitFactors[col] || 1.0; 
+            const prevCol = columns[i + 1];
+            
             // 1. Złożone wskaźniki (Wymagające krzyżowych wyliczeń)
             if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Dividend Yield' || def.label.includes('RO') || def.label === 'Current Ratio' || def.label === 'Debt Ratio' || def.label === 'Payout Ratio') {
-                const calc = {
+                const calc: any = {
                     netIncome: extractValue(['NetIncomeLoss', 'ProfitLoss'], col),
                     ttmNetIncome: getTTMValue(['NetIncomeLoss', 'ProfitLoss'], i),
                     equity: extractValue(['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'], col),
@@ -1106,15 +1137,36 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     divPaid: extractValue(['PaymentsOfDividendsCommonStock', 'DividendsCommonStock', 'Dividends'], col),
                     eps: extractValue(['EarningsPerShareDiluted', 'EarningsPerShareBasic'], col), 
                     dps: extractValue(['CommonStockDividendsPerShareDeclared', 'CommonStockDividendsPerShareCashPaid'], col),
-                    price: getClosestPrice(parseInt(yearStr), quarterStr) 
+                    price: getClosestPrice(periodEndDates[col]) 
                 };
 
-                // Aplikowanie mnożnika splitów do wartości per-share przed wyliczeniami!
                 if (calc.eps !== null) calc.eps /= splitFactor;
                 if (calc.dps !== null) calc.dps /= splitFactor;
 
+                // --- NOWE: Ręczne, dokładne wyliczanie TTM Diluted EPS dla P/E ---
+                let ttmEps: number | null = null;
+                if (currentPeriod === 'annual') {
+                    ttmEps = calc.eps;
+                } else {
+                    let sum = 0;
+                    let valid = true;
+                    for (let j = 0; j < 4; j++) {
+                        const targetCol = columns[i + j];
+                        if (!targetCol) { valid = false; break; }
+                        const val = extractValue(['EarningsPerShareDiluted', 'EarningsPerShareBasic'], targetCol);
+                        if (val === null) { valid = false; break; }
+                        
+                        // POPRAWKA BŁĘDU: Było targetYearStr. Zamieniono na targetCol
+                        const targetSplit = splitFactors[targetCol] || 1.0; 
+                        sum += (val / targetSplit); 
+                    }
+                    ttmEps = valid ? sum : null;
+                }
+                calc.ttmEps = ttmEps;
+
+                // Implementacja wskaźników
                 if (def.label === 'P/E Ratio') {
-                    values[col] = (calc.price && calc.eps) ? calc.price / calc.eps : null;
+                    values[col] = (calc.price && calc.ttmEps) ? calc.price / calc.ttmEps : null;
                 } else if (def.label === 'P/BV Ratio') {
                     if (calc.price && calc.equity && calc.netIncome && calc.eps && calc.eps !== 0) {
                         const sharesOutstanding = calc.netIncome / calc.eps;
@@ -1140,7 +1192,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                 } else if (def.label === 'Payout Ratio') {
                     values[col] = (calc.divPaid && calc.netIncome) ? (Math.abs(calc.divPaid) / Math.abs(calc.netIncome)) * 100 : null;
                 }
-            } 
+            }
             // 2. Proste metryki "Na Akcję" (Zawsze korygowane o splity)
             else if (def.label === 'EPS (Basic)' || def.label === 'Basic' || def.label === 'Diluted' || def.label === 'Dividend per Share') {
                 const rawVal = extractValue(def.tags, col);
@@ -1159,17 +1211,14 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
             else if (def.label === 'Gross profit') {
                 const reportedGross = extractValue(def.tags, col);
                 if (reportedGross !== null) {
-                    values[col] = reportedGross; // Spółka podała wynik na tacy (np. Apple)
+                    values[col] = reportedGross; 
                 } else {
-                    // Wyliczamy ręcznie: Przychody - Koszty
                     const revTags = METRICS_MAP.income.find(m => m.label === 'Revenue')?.tags || [];
                     const costTags = METRICS_MAP.income.find(m => m.label === 'Cost of revenue')?.tags || [];
                     
                     const rev = extractValue(revTags, col);
                     const cost = extractValue(costTags, col);
                     
-                    // Jeśli mamy obie wartości, liczymy. W przypadku Mastercard 'cost' będzie null, 
-                    // więc poprawnie zwróci null (bo Mastercard nie ma COGS).
                     if (rev !== null && cost !== null) {
                         values[col] = rev - cost;
                     } else {
@@ -1177,16 +1226,12 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     }
                 }
             }
-            // =================================================================
-            // 5. NOWE: Ręczne wyliczanie "Zysku operacyjnego" dla firm typu Single-Step
-            // =================================================================
+            // 5. Ręczne wyliczanie "Zysku operacyjnego" dla firm typu Single-Step
             else if (def.label === 'Operating income') {
                 const reportedOpInc = extractValue(def.tags, col);
                 if (reportedOpInc !== null) {
                     values[col] = reportedOpInc;
                 } else {
-                    // Skoro nie podali Zysku Operacyjnego, szacujemy zysk wyliczając EBIT
-                    // (Zysk przed opodatkowaniem + zapłacone odsetki od długu)
                     const ebtTags = METRICS_MAP.income.find(m => m.label === 'Income before income tax')?.tags || [];
                     const ebt = extractValue(ebtTags, col);
                     const interest = extractValue(['InterestExpense', 'InterestExpenseDebt', 'InterestExpenseNet'], col) || 0;
@@ -1202,16 +1247,13 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                 const reportedRev = extractValue(def.tags, col);
                 
                 if (reportedRev !== null) {
-                    values[col] = reportedRev; // Mamy standardowy tag (np. Apple, Microsoft)
+                    values[col] = reportedRev; 
                 } else {
-                    // Instytucje finansowe często ukrywają sumę pod niestandardowym tagiem.
-                    // Składamy sumę z klocków US-GAAP: Przychody pozaodsetkowe + Odsetki netto
                     const nonInterest = extractValue(['NoninterestIncome', 'FeesAndCommissions'], col) || 0;
                     const netInterest = extractValue(['InterestIncomeExpenseNet', 'NetInterestIncome'], col) || 0;
                     
                     const totalCalculated = nonInterest + netInterest;
                     
-                    // Jeśli znaleźliśmy jakiekolwiek dane bankowe, wstawiamy wynik
                     if (totalCalculated !== 0) {
                         values[col] = totalCalculated;
                     } else {
@@ -1219,8 +1261,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     }
                 }
             }
-            // =================================================================
-            // 6. Standardowe zyski i przychody bazowe (Nie korygujemy o splity)
+            // 6. Standardowe zyski i przychody bazowe
             else {
                 values[col] = extractValue(def.tags, col);
             }
@@ -1371,6 +1412,7 @@ function renderChart(tableData: any[], columns: string[]) {
         chartInstance.destroy();
     }
 
+
     // ============================================================
     // 1. OVERVIEW
     // ============================================================
@@ -1380,23 +1422,54 @@ function renderChart(tableData: any[], columns: string[]) {
         const pes: (number | null)[] = [];
         const labels: string[] = [];
 
-        const epsRow = tableData.find(r => r.label === 'EPS (Basic)') ?? tableData.find(r => r.label === 'Basic');
-        const epsDict: Record<string, number> = {};
+        // --- NOWE: Dynamiczne budowanie ścieżki TTM EPS dla wysoce precyzyjnych wykresów ---
+        const quarterlyEpsDict: { time: number, ttmEps: number }[] = [];
+        const qCols = getQuarterlyColumns();
+        const qIncomeData = processSecData(METRICS_MAP.income, qCols);
+        const qDilutedRow = qIncomeData.find(r => r.label === 'Diluted') ?? qIncomeData.find(r => r.label === 'Basic');
 
-        if (epsRow) {
-            columns.forEach(col => {
-                const year = col.substring(0, 4);
-                if (!col.includes('Q') && epsRow.values[col] != null) {
-                    epsDict[year] = Number(epsRow.values[col]);
+
+        if (qDilutedRow) {
+            for (let i = 0; i < qCols.length; i++) {
+                let ttmSum = 0;
+                let valid = true;
+                for (let j = 0; j < 4; j++) {
+                    if (i + j >= qCols.length) { valid = false; break; }
+                    const val = qDilutedRow.values[qCols[i + j]];
+                    if (val == null) { valid = false; break; }
+                    ttmSum += Number(val);
                 }
-            });
+                if (valid) {
+                    const col = qCols[i];
+                    let targetTime = periodEndDates[col];
+                    
+                    if (!targetTime) {
+                        const year = parseInt(col.substring(0, 4));
+                        const q = col.substring(5, 7);
+                        let month = 11, day = 31;
+                        if (q === 'Q1') { month = 2; day = 31; }
+                        else if (q === 'Q2') { month = 5; day = 30; }
+                        else if (q === 'Q3') { month = 8; day = 30; }
+                        targetTime = new Date(year, month, day).getTime();
+                    }
+                    
+                    const dateNum = targetTime + (45 * 86400000);
+                    quarterlyEpsDict.push({ time: dateNum, ttmEps: ttmSum });
+                }
+            }
+            quarterlyEpsDict.sort((a, b) => a.time - b.time);
         }
+
+
+        let currentTtmEps: number | null = null;
+        let epsIdx = 0;
 
         if (rawPriceData && rawPriceData.length > 0) {
             for (const quote of rawPriceData) {
                 if (!quote.date) continue;
                 const dateObj = new Date(quote.date);
-                const yearStr = dateObj.getFullYear().toString();
+                const quoteTime = dateObj.getTime();
+                
                 const price = quote.close ?? quote.adjClose;
                 const volume = quote.volume ?? 0;
 
@@ -1409,13 +1482,19 @@ function renderChart(tableData: any[], columns: string[]) {
                 prices.push(numericPrice);
                 volumes.push(numericVolume);
 
-                const currentEps = epsDict[yearStr];
-                if (currentEps != null && Number.isFinite(currentEps) && currentEps > 0) {
-                    const dailyPE = numericPrice / currentEps;
-                    if (Number.isFinite(dailyPE) && dailyPE > 0 && dailyPE < 300) {
+                // Zaktualizuj aktualny TTM EPS, płynnie podążając za upływem czasu (jak w indicators)
+                while (epsIdx < quarterlyEpsDict.length && quarterlyEpsDict[epsIdx].time <= quoteTime) {
+                    currentTtmEps = quarterlyEpsDict[epsIdx].ttmEps;
+                    epsIdx++;
+                }
+
+                // Kalkulacja identyczna jak w Indicators
+                if (currentTtmEps && currentTtmEps > 0 && price) {
+                    const dailyPE = Number(price) / currentTtmEps;
+                    if (dailyPE > 0 && dailyPE < 300) {
                         pes.push(dailyPE);
                     } else {
-                        pes.push(null);
+                        pes.push(null); // Zachowujemy null dla spójności osi X w overview (nie psuje Price i Volume)
                     }
                 } else {
                     pes.push(null);
@@ -1482,7 +1561,7 @@ function renderChart(tableData: any[], columns: string[]) {
                         yAxisID: 'yPE',
                         pointRadius: 0,
                         borderWidth: 1.5,
-                        spanGaps: true,
+                        spanGaps: false,
                         fill: true,
                         order: 3,
                         tension: 0.2,
@@ -1543,50 +1622,89 @@ function renderChart(tableData: any[], columns: string[]) {
     // ============================================================
     // 2. INDICATORS
     // ============================================================
+// ============================================================
+    // 2. INDICATORS
+    // ============================================================
     else if (currentMainTab === 'indicators') {
-        const peDataPoints: number[] = [];
+        const peDataPoints: (number | null)[] = [];
         const dateLabels: string[] = [];
         
-        const epsRow = tableData.find(r => r.label === 'EPS (Basic)') ?? tableData.find(r => r.label === 'Basic');
-        const epsDict: Record<string, number> = {};
+        // --- NOWE: Osobne, precyzyjne wyliczanie TTM EPS ---
+        const quarterlyEpsDict: { time: number, ttmEps: number }[] = [];
+        const qCols = getQuarterlyColumns();
+        const qIncomeData = processSecData(METRICS_MAP.income, qCols);
+        const qDilutedRow = qIncomeData.find(r => r.label === 'Diluted') ?? qIncomeData.find(r => r.label === 'Basic');
 
-        if (epsRow) {
-            columns.forEach(col => {
-                const year = col.substring(0, 4);
-                if (!col.includes('Q')) {
-                    if (epsRow.values[col] !== null && epsRow.values[col] !== undefined) {
-                        epsDict[year] = Number(epsRow.values[col]);
-                    }
-                } else {
-                    if (epsRow.values[col] !== null && epsRow.values[col] !== undefined) {
-                        epsDict[year] = (epsDict[year] || 0) + Number(epsRow.values[col]);
-                    }
+        if (qDilutedRow) {
+            for (let i = 0; i < qCols.length; i++) {
+                let ttmSum = 0;
+                let valid = true;
+                for (let j = 0; j < 4; j++) {
+                    if (i + j >= qCols.length) { valid = false; break; }
+                    const val = qDilutedRow.values[qCols[i + j]];
+                    if (val == null) { valid = false; break; }
+                    ttmSum += Number(val);
                 }
-            });
+                if (valid) {
+                    const col = qCols[i];
+                    let targetTime = periodEndDates[col];
+                    
+                    if (!targetTime) {
+                        const year = parseInt(col.substring(0, 4));
+                        const q = col.substring(5, 7);
+                        let month = 11, day = 31;
+                        if (q === 'Q1') { month = 2; day = 31; }
+                        else if (q === 'Q2') { month = 5; day = 30; }
+                        else if (q === 'Q3') { month = 8; day = 30; }
+                        targetTime = new Date(year, month, day).getTime();
+                    }
+                    
+                    const dateNum = targetTime + (45 * 86400000);
+                    quarterlyEpsDict.push({ time: dateNum, ttmEps: ttmSum });
+                }
+            }
+            quarterlyEpsDict.sort((a, b) => a.time - b.time);
         }
+
+        let currentTtmEps: number | null = null;
+        let epsIdx = 0;
 
         if (rawPriceData && rawPriceData.length > 0) {
             for (const quote of rawPriceData) {
                 if (!quote.date) continue;
                 const dateObj = new Date(quote.date);
-                const yearStr = dateObj.getFullYear().toString();
-                const currentEps = epsDict[yearStr];
+                const quoteTime = dateObj.getTime();
                 const price = quote.close ?? quote.adjClose;
 
-                if (currentEps && currentEps > 0 && price) {
-                    const dailyPE = Number(price) / currentEps;
+                // Zaktualizuj aktualny TTM EPS
+                while (epsIdx < quarterlyEpsDict.length && quarterlyEpsDict[epsIdx].time <= quoteTime) {
+                    currentTtmEps = quarterlyEpsDict[epsIdx].ttmEps;
+                    epsIdx++;
+                }
+
+                // 1. ZAWSZE dodajemy datę na oś X (żeby istniał punkt w czasie dla ewentualnej luki)
+                dateLabels.push(dateObj.toISOString().split('T')[0]);
+
+                // 2. Jeśli mamy prawidłowy zysk, wrzucamy wartość, w przeciwnym razie null
+                if (currentTtmEps && currentTtmEps > 0 && price) {
+                    const dailyPE = Number(price) / currentTtmEps;
                     if (dailyPE > 0 && dailyPE < 300) {
-                        dateLabels.push(dateObj.toISOString().split('T')[0]);
                         peDataPoints.push(dailyPE);
+                    } else {
+                        peDataPoints.push(null); // Luka w wykresie
                     }
+                } else {
+                    peDataPoints.push(null); // Luka w wykresie (ujemny EPS)
                 }
             }
         }
 
+        // 3. Poprawka do liczenia średniej (filtrujemy tylko rzeczywiste liczby, omijając null)
         let averagePE = 0;
-        if (peDataPoints.length > 0) {
-            const sumPE = peDataPoints.reduce((acc, val) => acc + val, 0);
-            averagePE = sumPE / peDataPoints.length;
+        const validPEs = peDataPoints.filter(val => val !== null) as number[];
+        if (validPEs.length > 0) {
+            const sumPE = validPEs.reduce((acc, val) => acc + val, 0);
+            averagePE = sumPE / validPEs.length;
         }
         
         const averageDataPoints = peDataPoints.map(() => averagePE);
@@ -1602,7 +1720,8 @@ function renderChart(tableData: any[], columns: string[]) {
                     backgroundColor: 'rgba(41, 98, 255, 0.1)',
                     borderWidth: 1.5,
                     pointRadius: 0,
-                    fill: true
+                    fill: true,
+                    spanGaps: false,
                 },
                 {
                     label: `Średnie P/E (${averagePE.toFixed(2)})`, 
