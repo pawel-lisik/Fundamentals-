@@ -880,49 +880,125 @@ const columns = currentPeriod === 'annual' ? getAnnualColumns() : getQuarterlyCo
 }
 
 // ZAKTUALIZOWANE OBLICZENIA W processSecData
+// ZAKTUALIZOWANE OBLICZENIA W processSecData
 function processSecData(metricsDef: MetricDef[], columns: string[]) {
     const result: any[] = [];
     const rawData = rawSecData;
 
-    // Funkcja do ekstrakcji surowych danych XBRL z obiektu SEC
-    const extractValue = (tags: string[], col: string) => {
-        const isQuarterlyMode = col.includes('Q');
-        const year = parseInt(col.substring(0, 4));
-        const quarterStr = isQuarterlyMode ? col.substring(5, 7) : null;
-
+    // Pomocnicza funkcja wydzielona do bezpośredniego pobierania wartości per kwartał / rok
+    const getRawValue = (tags: string[], year: number, isQuarterly: boolean, quarterStr: string | null, forceYTD: boolean = false) => {
         for (const tag of tags) {
             const unitData = rawData[tag]?.units?.USD || rawData[tag]?.units?.['USD/shares'];
             
             if (unitData) {
                 let items = unitData.filter((item: any) => item.fy === year);
                 
-                if (!isQuarterlyMode) {
+                if (!isQuarterly) {
                     items = items.filter((item: any) => {
                         if (item.form !== '10-K' && item.fp !== 'FY') return false;
                         if (item.start && item.end) {
                             const daysDiff = (new Date(item.end).getTime() - new Date(item.start).getTime()) / 86400000;
-                            if (daysDiff < 300) return false;
+                            if (daysDiff < 300) return false; // Rok musi mieć ~365 dni
                         }
                         return true;
                     });
                 } else {
                     items = items.filter((item: any) => {
                         if (quarterStr === 'Q4') {
-                            if (currentTab === 'balance' || currentMainTab !== 'statements') return item.form === '10-K' || item.fp === 'FY';
+                            const isBalanceTag = METRICS_MAP.balance.some(m => m.tags.includes(tag));
+                            if (currentTab === 'balance' || isBalanceTag || currentMainTab !== 'statements') {
+                                return item.form === '10-K' || item.fp === 'FY';
+                            }
                             return item.fp === 'Q4';
                         }
                         return item.fp === quarterStr;
                     });
+
+                    // Inteligentne filtrowanie po czasie trwania (duration)
+                    if (items.length > 1) {
+                        if (forceYTD) {
+                            // Dla Cash Flow szukamy wartości narastających (YTD): Q1~90d, Q2~180d, Q3~270d
+                            let targetDays = 90;
+                            if (quarterStr === 'Q2') targetDays = 180;
+                            if (quarterStr === 'Q3') targetDays = 270;
+                            
+                            const ytdItems = items.filter((item: any) => {
+                                if (!item.start || !item.end) return false;
+                                const daysDiff = (new Date(item.end).getTime() - new Date(item.start).getTime()) / 86400000;
+                                return Math.abs(daysDiff - targetDays) <= 25; // Szeroka tolerancja
+                            });
+                            if (ytdItems.length > 0) items = ytdItems;
+                        } else {
+                            // Dla Income Statement preferujemy czysty kwartał (ok. 90 dni)
+                            const discreteItems = items.filter((item: any) => {
+                                if (!item.start || !item.end) return false;
+                                const daysDiff = (new Date(item.end).getTime() - new Date(item.start).getTime()) / 86400000;
+                                return daysDiff >= 80 && daysDiff <= 105;
+                            });
+                            if (discreteItems.length > 0) items = discreteItems;
+                        }
+                    }
                 }
 
                 if (items.length > 0) {
                     items.sort((a: any, b: any) => new Date(a.filed).getTime() - new Date(b.filed).getTime());
-                    return items[items.length - 1].val;
+                    return items[items.length - 1].val; // Najświeższy raport
                 }
             }
         }
         return null;
     };
+
+    // Główna funkcja ekstrakcji z wbudowaną dedukcją Q4 i Cash Flow
+    const extractValue = (tags: string[], col: string) => {
+        const isQuarterlyMode = col.includes('Q');
+        const year = parseInt(col.substring(0, 4));
+        const quarterStr = isQuarterlyMode ? col.substring(5, 7) : null;
+
+        const isBalance = METRICS_MAP.balance.some(m => m.tags.some(t => tags.includes(t)));
+        const isCashFlow = METRICS_MAP.cashflow.some(m => m.tags.some(t => tags.includes(t)));
+
+        let val = getRawValue(tags, year, isQuarterlyMode, quarterStr, isCashFlow);
+
+        if (isQuarterlyMode && !isBalance) {
+            if (isCashFlow) {
+                // Cash Flow z SEC jest w formacie narastającym (YTD).
+                // Aby otrzymać pojedyncze kwartały, wyliczamy je matematycznie z różnic.
+                if (quarterStr === 'Q2') {
+                    const q1 = getRawValue(tags, year, true, 'Q1', true);
+                    const q2ytd = getRawValue(tags, year, true, 'Q2', true); // Stan po 6 mies.
+                    if (q2ytd !== null && q1 !== null) val = q2ytd - q1;
+                } 
+                else if (quarterStr === 'Q3') {
+                    const q2ytd = getRawValue(tags, year, true, 'Q2', true); // Stan po 6 mies.
+                    const q3ytd = getRawValue(tags, year, true, 'Q3', true); // Stan po 9 mies.
+                    if (q3ytd !== null && q2ytd !== null) val = q3ytd - q2ytd;
+                } 
+                else if (quarterStr === 'Q4') {
+                    const fy = getRawValue(tags, year, false, null); // Cały rok (12 mies.)
+                    const q3ytd = getRawValue(tags, year, true, 'Q3', true); // Stan po 9 mies.
+                    if (fy !== null && q3ytd !== null) val = fy - q3ytd;
+                }
+            } else {
+                // Income Statement 
+                if (quarterStr === 'Q4') {
+                    const fy = getRawValue(tags, year, false, null);
+                    const q1 = getRawValue(tags, year, true, 'Q1', false);
+                    const q2 = getRawValue(tags, year, true, 'Q2', false);
+                    const q3 = getRawValue(tags, year, true, 'Q3', false);
+
+                    if (fy !== null && q1 !== null && q2 !== null && q3 !== null) {
+                        val = fy - (q1 + q2 + q3);
+                    }
+                }
+            }
+        }
+
+        return val;
+    };
+
+    // --- SYSTEM WYKRYWANIA SPLITÓW ---
+    // (reszta Twojego kodu pozostaje bez zmian)
 
     // --- SYSTEM WYKRYWANIA SPLITÓW ---
     const impliedShares: Record<string, number> = {};
