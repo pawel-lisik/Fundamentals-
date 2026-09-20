@@ -1491,7 +1491,7 @@ function renderChart(tableData: any[], columns: string[]) {
                 // Kalkulacja identyczna jak w Indicators
                 if (currentTtmEps && currentTtmEps > 0 && price) {
                     const dailyPE = Number(price) / currentTtmEps;
-                    if (dailyPE > 0 && dailyPE < 300) {
+                    if (dailyPE > 0 && dailyPE < 500) {
                         pes.push(dailyPE);
                     } else {
                         pes.push(null); // Zachowujemy null dla spójności osi X w overview (nie psuje Price i Volume)
@@ -1688,7 +1688,7 @@ function renderChart(tableData: any[], columns: string[]) {
                 // 2. Jeśli mamy prawidłowy zysk, wrzucamy wartość, w przeciwnym razie null
                 if (currentTtmEps && currentTtmEps > 0 && price) {
                     const dailyPE = Number(price) / currentTtmEps;
-                    if (dailyPE > 0 && dailyPE < 300) {
+                    if (dailyPE > 0 && dailyPE < 500) {
                         peDataPoints.push(dailyPE);
                     } else {
                         peDataPoints.push(null); // Luka w wykresie
