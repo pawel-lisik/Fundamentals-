@@ -890,11 +890,15 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
     const result: any[] = [];
     const rawData = rawSecData;
 
-    // Pomocnicza funkcja wydzielona do bezpośredniego pobierania wartości per kwartał / rok
+        // Pomocnicza funkcja wydzielona do bezpośredniego pobierania wartości per kwartał / rok
     const getRawValue = (tags: string[], year: number, isQuarterly: boolean, quarterStr: string | null, forceYTD: boolean = false) => {
         for (const tag of tags) {
-            const unitData = rawData[tag]?.units?.USD || rawData[tag]?.units?.['USD/shares'];
-            
+            // Priorytetyzuj USD/shares tylko dla metryk na akcję
+            const isPerShare = tag.toLowerCase().includes('pershare');
+            const unitData = isPerShare 
+                ? (rawData[tag]?.units?.['USD/shares'] || rawData[tag]?.units?.USD)
+                : (rawData[tag]?.units?.USD || rawData[tag]?.units?.['USD/shares']);
+                
             if (unitData) {
                 let items = unitData.filter((item: any) => item.fy === year);
                 
@@ -1883,14 +1887,39 @@ function renderChart(tableData: any[], columns: string[]) {
     }
 }
 
+// Zostaw currentYear i YEARS_TO_FETCH na górze pliku, ale dodaj nową funkcję:
+// const currentYear = new Date().getFullYear();
+// const YEARS_TO_FETCH = 20;
+
+function getMaxYear(): number {
+    let maxYear = new Date().getFullYear();
+    if (!rawSecData) return maxYear;
+    
+    // Szukamy w głównych tagach najwyższego dostępnego roku fiskalnego (np. 2027 dla NVDA)
+    const tagsToCheck = ['NetIncomeLoss', 'ProfitLoss', 'Assets', 'Revenues'];
+    for (const tag of tagsToCheck) {
+        const units = rawSecData[tag]?.units?.USD;
+        if (units) {
+            for (const item of units) {
+                if (item.fy && item.fy > maxYear) {
+                    maxYear = item.fy;
+                }
+            }
+        }
+    }
+    return maxYear;
+}
+
 function getAnnualColumns(): string[] {
-    return Array.from({ length: YEARS_TO_FETCH }, (_, i) => (currentYear - i).toString());
+    const maxYear = getMaxYear();
+    return Array.from({ length: YEARS_TO_FETCH }, (_, i) => (maxYear - i).toString());
 }
 
 function getQuarterlyColumns(): string[] {
     const cols: string[] = [];
+    const maxYear = getMaxYear();
     for (let i = 0; i < YEARS_TO_FETCH; i++) {
-        const y = currentYear - i;
+        const y = maxYear - i;
         cols.push(`${y} Q4`, `${y} Q3`, `${y} Q2`, `${y} Q1`);
     }
     return cols;
@@ -2027,12 +2056,7 @@ function renderGenericChart(canvasId: string, label: string, dates: string[], va
     });
 }
 
-// ==========================================
-// --- MODUŁ EARNINGS (HISTORIA + PROGNOZY) ---
-// ==========================================
-// ==========================================
-// --- MODUŁ EARNINGS (HISTORIA + PROGNOZY) ---
-// ==========================================
+
 // ==========================================
 // --- MODUŁ EARNINGS (HISTORIA + PROGNOZY) ---
 // ==========================================
@@ -2051,22 +2075,34 @@ function renderEarnings() {
     if (ctxAnnual) {
         const columns = getAnnualColumns(); 
         const incomeData = processSecData(METRICS_MAP.income, columns);
-        const epsRow = incomeData.find(r => r.label === 'EPS (Basic)') ?? incomeData.find(r => r.label === 'Basic');
+        const epsRow = incomeData.find(r => r.label === 'Diluted') ?? incomeData.find(r => r.label === 'Basic');
 
         const aLabels: string[] = [];
         const aActuals: (number | null)[] = [];
         const aEstimates: (number | null)[] = [];
 
-        const currentYear = new Date().getFullYear();
+        // ZMIANA: Szukamy ostatniego ZARAPORTOWANEGO PEŁNEGO ROKU (Annual) na podstawie danych z tabeli.
+        // Odrzucamy lata z 'null', które mają na razie tylko raporty kwartalne.
+        let maxReportedAnnualYear = new Date().getFullYear() - 1;
+        if (epsRow && epsRow.values) {
+            const validYears = Object.keys(epsRow.values)
+                .filter(year => epsRow.values[year] !== null && epsRow.values[year] !== undefined)
+                .map(Number)
+                .filter(y => !isNaN(y));
+            if (validYears.length > 0) {
+                maxReportedAnnualYear = Math.max(...validYears);
+            }
+        }
 
-        // POPRAWKA: Pętla startująca zawsze od legendarnego 2009 roku!
         const startYear = 2009;
-        for (let y = startYear; y < currentYear; y++) {
+        
+        // Pętla leci wyłącznie do ostatniego dostępnego pełnego roku (bez pustych dziur)
+        for (let y = startYear; y <= maxReportedAnnualYear; y++) {
             const yearStr = y.toString();
             aLabels.push(yearStr);
             const val = epsRow?.values[yearStr];
             aActuals.push(val !== undefined ? val : null);
-            aEstimates.push(null); // Szare słupki są puste dla historii
+            aEstimates.push(null);
         }
 
         // Prognozy Yahoo
@@ -2076,18 +2112,15 @@ function renderEarnings() {
         const eps0y = t0y?.earningsEstimate?.avg;
         const eps1y = t1y?.earningsEstimate?.avg;
 
-
-        // Szary słupek 1: Rok bieżący (0y)
-        aLabels.push(currentYear.toString());
+        // Szary słupek 1: Rok bieżący (0y) - automatycznie zasłania pierwszą pustą pozycję (np. 2027 dla Nvidii)
+        aLabels.push((maxReportedAnnualYear + 1).toString());
         aActuals.push(null);
         aEstimates.push(eps0y != null ? eps0y : null);
 
         // Szary słupek 2: Przyszły rok (+1y)
-        aLabels.push((currentYear + 1).toString());
+        aLabels.push((maxReportedAnnualYear + 2).toString());
         aActuals.push(null);
         aEstimates.push(eps1y != null ? eps1y : null);
-
-
 
         annualEarningsChartInstance = new Chart(ctxAnnual, {
             type: 'bar',
@@ -2140,15 +2173,20 @@ function renderEarnings() {
     // --- 2. RENDEROWANIE WYKRESU KWARTALNEGO (TRAFIENIA W PROGNOZY) ---
     const ctxQuarterly = document.getElementById('quarterly-earnings-chart') as HTMLCanvasElement;
     if (ctxQuarterly) {
-        const validData = historyData.filter((d: any) => d.epsEstimate != null && d.epsActual != null);
+        let validData = historyData.filter((d: any) => d.epsEstimate != null && d.epsActual != null);
         
         if (validData.length > 0) {
+            validData.sort((a: any, b: any) => new Date(a.quarter).getTime() - new Date(b.quarter).getTime());
+
             const qLabels = validData.map((d: any) => {
                 if (!d.quarter) return 'N/A';
                 const dateObj = new Date(d.quarter);
                 if (isNaN(dateObj.getTime())) return d.quarter;
-                const q = Math.floor(dateObj.getMonth() / 3) + 1;
-                return `Q${q} '${dateObj.getFullYear().toString().slice(-2)}`;
+                
+                let monthStr = dateObj.toLocaleDateString('pl-PL', { month: 'short' }).replace('.', '');
+                monthStr = monthStr.charAt(0).toUpperCase() + monthStr.slice(1);
+                
+                return `${monthStr} '${dateObj.getFullYear().toString().slice(-2)}`;
             });
 
             const qEstimates = validData.map((d: any) => d.epsEstimate);
