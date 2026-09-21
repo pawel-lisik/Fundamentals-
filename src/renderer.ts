@@ -47,7 +47,13 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
             style: 'normal' 
         },
         { label: 'Income tax expense', tags: ['IncomeTaxExpenseBenefit'], style: 'normal' },
-        { label: 'Net income', tags: ['NetIncomeLoss', 'ProfitLoss'], style: 'total' },
+        { label: 'Net income', tags: [
+            'NetIncomeLoss',
+            'ProfitLoss',
+            'NetIncomeLossAvailableToCommonStockholdersBasic',
+            'IncomeLossFromContinuingOperations',
+            'IncomeLossFromContinuingOperationsNetOfTax'
+            ], style: 'total' },
         { label: 'space4', tags: [], style: 'empty' },
         { label: 'Net income per share:', tags: [], style: 'header' },
         { label: 'Basic', tags: ['EarningsPerShareBasic', 'EarningsPerShareDiluted'], style: 'sub', format: 'decimal' },
