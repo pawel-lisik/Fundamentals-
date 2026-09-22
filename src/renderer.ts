@@ -11,7 +11,7 @@ let currentLoadedTicker: string | null = null;
 // Typy wierszy dla tabeli
 // Typy wierszy dla tabeli
 type RowStyle = 'normal' | 'total' | 'sub' | 'header' | 'empty';
-type ValueFormat = 'currency' | 'percent' | 'ratio' | 'decimal' | 'missing_price';
+type ValueFormat = 'currency' | 'percent' | 'ratio' | 'decimal' | 'missing_price' | 'shares';
 
 interface MetricDef {
     label: string;
@@ -57,7 +57,30 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         { label: 'space4', tags: [], style: 'empty' },
         { label: 'Net income per share:', tags: [], style: 'header' },
         { label: 'Basic', tags: ['EarningsPerShareBasic', 'EarningsPerShareDiluted'], style: 'sub', format: 'decimal' },
-        { label: 'Diluted', tags: ['EarningsPerShareDiluted', 'EarningsPerShareBasic'], style: 'sub', format: 'decimal' }
+        { label: 'Diluted', tags: ['EarningsPerShareDiluted', 'EarningsPerShareBasic'], style: 'sub', format: 'decimal' },
+        { label: 'space5', tags: [], style: 'empty' },
+        { label: 'Weighted average shares outstanding:', tags: [], style: 'header' },
+        { 
+            label: 'Shares (Basic)', 
+            tags: [
+                'WeightedAverageNumberOfSharesOutstandingBasic',
+                'WeightedAverageNumberOfSharesOutstandingBasicAndDiluted',
+                'CommonStockSharesOutstanding'
+            ], 
+            style: 'sub', 
+            format: 'shares' 
+        },
+        { 
+            label: 'Shares (Diluted)', 
+            tags: [
+                'WeightedAverageNumberOfDilutedSharesOutstanding',
+                'WeightedAverageNumberOfSharesOutstandingDiluted',
+                'WeightedAverageNumberOfSharesOutstandingBasicAndDiluted',
+                'WeightedAverageNumberOfSharesOutstandingBasic'
+            ], 
+            style: 'sub', 
+            format: 'shares' 
+        }
     ],
     balance: [
         { label: 'Assets', tags: [], style: 'header' },
@@ -157,9 +180,9 @@ function updateWatchlistButtonState() {
     btn.style.display = 'block'; 
 
     if (watchlist.includes(currentLoadedTicker)) {
-        btn.innerHTML = '<i class="fa-solid fa-minus"></i>';
+        btn.innerHTML = '<i class="fa-solid fa-circle-minus"></i>';
     } else {
-        btn.innerHTML = '<i class="fa-solid fa-plus"></i>';
+        btn.innerHTML = '<i class="fa-solid fa-circle-plus"></i>';
     }
 }
 
@@ -178,11 +201,12 @@ document.addEventListener('DOMContentLoaded', () => {
             currentMainTab = target.dataset.maintab as 'overview' | 'statements' | 'indicators' | 'dividends' | 'macro' | 'earnings';
             
             // KONTROLA WIDOCZNOŚCI
-
+            const statementsInfoLabel = document.getElementById('statements-info-label');
             const macroContainer = document.getElementById('macro-container');
-            const earningsContainer = document.getElementById('earnings-container'); // <-- NOWE
+            const earningsContainer = document.getElementById('earnings-container');
             const subTabsContainer = document.getElementById('sub-tabs-container');
             const periodToggle = document.getElementById('period-toggle');
+
             const otherContainers = [
                 document.getElementById('overview-info-container'),
                 document.getElementById('table-container'),
@@ -193,27 +217,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 macroContainer
             ];
 
-
-            // Ukrywamy wszystko
-            otherContainers.forEach(el => { if(el) el.style.display = 'none'; });
+            // 1. Reset widoczności wszystkich modułów
+            otherContainers.forEach(el => { if (el) el.style.display = 'none'; });
             if (subTabsContainer) subTabsContainer.style.display = 'none';
             if (periodToggle) periodToggle.style.display = 'none';
+            if (statementsInfoLabel) statementsInfoLabel.style.display = 'none';
 
+            // 2. Warunkowe aktywowanie wybranego widoku
             if (currentMainTab === 'macro') {
                 if (macroContainer) macroContainer.style.display = 'block';
                 loadMacroTab(); 
             } else if (currentMainTab === 'earnings') {
-                // --- LOGIKA ZAKŁADKI EARNINGS ---
                 if (earningsContainer) earningsContainer.style.display = 'block';
                 renderEarnings(); 
             } else {
-                // Wracamy do widoku spółki
+                // WSPÓLNA GAŁĄŹ DLA WIDOKÓW SPÓŁKI: overview, statements, indicators, dividends
+                if (currentMainTab === 'statements') {
+                    if (statementsInfoLabel) statementsInfoLabel.style.display = 'block'; // lub 'flex'
+                }
+
                 if (currentMainTab === 'indicators' || currentMainTab === 'statements') {
                     if (periodToggle) periodToggle.style.display = 'block';
                 }
+
                 if (subTabsContainer) {
                     subTabsContainer.style.display = currentMainTab === 'statements' ? 'flex' : 'none';
                 }
+
                 if (rawSecData) renderData(); 
             }
         });
@@ -899,11 +929,15 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
         // Pomocnicza funkcja wydzielona do bezpośredniego pobierania wartości per kwartał / rok
     const getRawValue = (tags: string[], year: number, isQuarterly: boolean, quarterStr: string | null, forceYTD: boolean = false) => {
         for (const tag of tags) {
-            // Priorytetyzuj USD/shares tylko dla metryk na akcję
             const isPerShare = tag.toLowerCase().includes('pershare');
-            const unitData = isPerShare 
-                ? (rawData[tag]?.units?.['USD/shares'] || rawData[tag]?.units?.USD)
-                : (rawData[tag]?.units?.USD || rawData[tag]?.units?.['USD/shares']);
+            const isShares = tag.toLowerCase().includes('shares');
+
+            // Akcje w SEC mają jednostkę "shares", EPS "USD/shares", a bilans/wyniki "USD"
+            const unitData = isShares
+                ? (rawData[tag]?.units?.shares || rawData[tag]?.units?.['shares'])
+                : isPerShare 
+                    ? (rawData[tag]?.units?.['USD/shares'] || rawData[tag]?.units?.USD)
+                    : (rawData[tag]?.units?.USD || rawData[tag]?.units?.['USD/shares']);
                 
             if (unitData) {
                 let items = unitData.filter((item: any) => item.fy === year);
@@ -965,6 +999,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
     };
 
     // --- NOWY, PRECYZYJNY SYSTEM SPLITÓW (OPARTY O YAHOO FINANCE I DATY SEC) ---
+    // --- POPRAWIONY SYSTEM SPLITÓW (OPARTY O DATĘ ZŁOŻENIA RAPORTU FILED) ---
     const splitFactors: Record<string, number> = {};
     
     columns.forEach(col => {
@@ -974,8 +1009,9 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
         const quarterStr = isQuarterlyMode ? col.substring(5, 7) : null;
         
         let targetTime: number | null = null;
+        let filingTime: number | null = null; // <-- Data złożenia raportu do SEC
         
-        // Szukamy dokładnej daty w danych SEC (NetIncomeLoss lub Assets) aby zignorować przesunięcia roku fiskalnego
+        // Szukamy dat w danych SEC (NetIncomeLoss, ProfitLoss lub Assets)
         for (const tag of ['NetIncomeLoss', 'ProfitLoss', 'Assets']) {
             const unitData = rawData[tag]?.units?.USD;
             if (unitData) {
@@ -987,13 +1023,18 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                 }
                 if (items.length > 0) {
                     items.sort((a: any, b: any) => new Date(a.filed).getTime() - new Date(b.filed).getTime());
-                    targetTime = new Date(items[items.length - 1].end).getTime();
+                    const latestItem = items[items.length - 1];
+                    targetTime = new Date(latestItem.end).getTime();
+                    
+                    if (latestItem.filed) {
+                        filingTime = new Date(latestItem.filed).getTime();
+                    }
                     break;
                 }
             }
         }
 
-        // Fallback, jeśli brakuje danych w SEC
+        // Fallback dla braku danych w SEC
         if (!targetTime) {
             let month = 11, day = 31;
             if (quarterStr === 'Q1') { month = 2; day = 31; }
@@ -1002,17 +1043,20 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
             targetTime = new Date(year, month, day).getTime();
         }
 
-        periodEndDates[col] = targetTime; // Zapisujemy dla wykresów!
+        periodEndDates[col] = targetTime; // Pozostaje do dopasowywania kursu akcji
+
+        // Data odniesienia: faktyczna data złożenia raportu (lub fallback: koniec okresu + 45 dni)
+        const referenceFilingTime = filingTime || (targetTime + (45 * 86400000));
 
         let cumulativeSplit = 1.0;
         if (rawSplitsData && rawSplitsData.length > 0) {
             for (const split of rawSplitsData) {
-                // split.date może być Unix timestampem (sekundy) lub stringiem/Date
                 const splitTime = (split.date instanceof Date) 
                     ? split.date.getTime() 
                     : (typeof split.date === 'number' ? split.date * 1000 : new Date(split.date).getTime());
                 
-                if (splitTime > targetTime) {
+                // Split przeliczamy WYŁĄCZNIE, gdy nastąpił PO publikacji danego raportu
+                if (splitTime > referenceFilingTime) {
                     cumulativeSplit *= (split.numerator / split.denominator);
                 }
             }
@@ -1029,6 +1073,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
         const isBalance = METRICS_MAP.balance.some(m => m.tags.some(t => tags.includes(t)));
         const isCashFlow = METRICS_MAP.cashflow.some(m => m.tags.some(t => tags.includes(t)));
         const isPerShare = tags.some(t => t.includes('PerShare')); // <--- Sprawdzamy czy to EPS/DPS
+        const isShares = tags.some(t => t.toLowerCase().includes('sharesoutstanding'));
 
         let val = getRawValue(tags, year, isQuarterlyMode, quarterStr, isCashFlow);
 
@@ -1059,7 +1104,21 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     const q3 = getRawValue(tags, year, true, 'Q3', false);
 
                     if (fy !== null && q1 !== null && q2 !== null && q3 !== null) {
-                        if (isPerShare) {
+                        if (isShares) {
+                            // Średnia ważona roczna to (Q1+Q2+Q3+Q4)/4, stąd Q4 = 4*FY - (Q1+Q2+Q3)
+                            const splitFY = splitFactors[`${year} Q4`] || 1.0;
+                            const splitQ1 = splitFactors[`${year} Q1`] || 1.0;
+                            const splitQ2 = splitFactors[`${year} Q2`] || 1.0;
+                            const splitQ3 = splitFactors[`${year} Q3`] || 1.0;
+
+                            const normFY = fy * splitFY;
+                            const normQ1 = q1 * splitQ1;
+                            const normQ2 = q2 * splitQ2;
+                            const normQ3 = q3 * splitQ3;
+
+                            const normQ4 = (4 * normFY) - (normQ1 + normQ2 + normQ3);
+                            val = normQ4 / splitFY;
+                        } else if (isPerShare) {
                             // --- ROZWIĄZANIE PROBLEMU: Znormalizowanie splitów przed odejmowaniem ---
                             const splitFY = splitFactors[`${year} Q4`] || 1.0;
                             const splitQ1 = splitFactors[`${year} Q1`] || 1.0;
@@ -1078,6 +1137,8 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                         } else {
                             val = fy - (q1 + q2 + q3);
                         }
+                    } else if (isShares && fy !== null) {
+                        val = fy; // Bezpieczny fallback dla brakujących pojedynczych kwartałów
                     }
                 }
             }
@@ -1203,11 +1264,16 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     values[col] = (calc.divPaid && calc.netIncome) ? (Math.abs(calc.divPaid) / Math.abs(calc.netIncome)) * 100 : null;
                 }
             }
-            // 2. Proste metryki "Na Akcję" (Zawsze korygowane o splity)
+            // 2. Proste metryki "Na Akcję" (Dzielone przez splitFactor)
             else if (def.label === 'EPS (Basic)' || def.label === 'Basic' || def.label === 'Diluted' || def.label === 'Dividend per Share') {
                 const rawVal = extractValue(def.tags, col);
                 values[col] = rawVal !== null ? rawVal / splitFactor : null;
             } 
+            // 2b. Liczba akcji (Mnożona przez splitFactor dla spójności z wyliczonym EPS)
+            else if (def.format === 'shares') {
+                const rawVal = extractValue(def.tags, col);
+                values[col] = rawVal !== null ? rawVal * splitFactor : null;
+            }
             // 3. Ręczne wyliczenie EBITDA
             else if (def.label === 'EBITDA') {
                 const netIncome = extractValue(['NetIncomeLoss', 'ProfitLoss'], col);
@@ -1339,12 +1405,21 @@ function formatTypedValue(value: number, format: ValueFormat): string {
     if (format === 'percent') return value.toFixed(2) + '%';
     if (format === 'ratio') return value.toFixed(2);
 
+    if (format === 'shares') {
+        const absVal = Math.abs(value);
+        if (absVal >= 1.0e6) {
+            // Prezentacja w milionach z dokładnością do 2 miejsc po przecinku
+            return (absVal / 1.0e6).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+        }
+        return absVal.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    }
+
     // format: currency
     const isNegative = value < 0;
     const absVal = Math.abs(value);
     let formatted = '';
     
-    if (absVal >= 1.0e9) {
+    if (absVal >= 1.0e6) {
         formatted = (absVal / 1.0e6).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
     } else {
         formatted = absVal.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
