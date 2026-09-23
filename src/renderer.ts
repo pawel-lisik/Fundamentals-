@@ -353,30 +353,55 @@ async function renderWatchlist() {
     let html = '';
 
     try {
-        // Używamy nowego, hurtowego endpointu zdefiniowanego w main.ts
         const quotes = await (window as any).electronAPI.fetchWatchlistQuotes(watchlist);
         
         for (const quote of quotes) {
             const isPositive = quote.changePercent >= 0;
             const changeClass = isPositive ? 'positive' : 'negative';
             const sign = isPositive ? '+' : '';
-            const initial = quote.name.charAt(0).toUpperCase();
+            
+            // Ignorujemy zapytania o logo dla par walutowych i indeksów (np. USDPLN=X, ^GSPC)
+            const isStock = !quote.ticker.includes('=') && !quote.ticker.includes('^');
+            const fallbackText = quote.ticker.length <= 4 ? quote.ticker : quote.ticker.slice(0, 3);
+            const formattedPrice = quote.price != null ? quote.price.toFixed(2) : '—';
+            const formattedChange = quote.changePercent != null ? quote.changePercent.toFixed(2) : '0.00';
+
+            // Dwuwarstwowy avatar: warstwa 1 (fallback pod spodem), warstwa 2 (logo na białym tle)
+            let logoHTML = `
+            <div class="wl-logo" style="position: relative; width: 34px; height: 34px; border-radius: 50%; background-color: var(--bg-secondary, #1e222d); border: 1px solid var(--border-color, #2a2e39); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;">
+                <span style="font-weight: 700; font-size: 10px; color: var(--text-secondary, #787b86); position: absolute; z-index: 1; text-transform: uppercase;">
+                    ${fallbackText}
+                </span>`;
+
+            if (isStock) {
+                logoHTML += `
+                <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: #f8f9fa; z-index: 2; display: flex; align-items: center; justify-content: center;">
+                    <img 
+                        src="https://financialmodelingprep.com/image-stock/${quote.ticker.toUpperCase()}.png" 
+                        alt="${quote.ticker}"
+                        style="width: 100%; height: 100%; object-fit: contain; padding: 4px; box-sizing: border-box;"
+                        onerror="this.parentElement.style.display='none';"
+                    />
+                </div>`;
+            }
+
+            logoHTML += `</div>`;
 
             html += `
-            <div style="border-bottom: 1px solid var(--border-color); border-radius: 0px" class="wl-item" data-ticker="${quote.ticker}" oncontextmenu="removeFromWatchlist('${quote.ticker}')" title="Kliknij prawym, aby usunąć">
-                <div class="wl-logo">${initial}</div>
+            <div style="border-bottom: 1px solid var(--border-color); border-radius: 0px;" class="wl-item" data-ticker="${quote.ticker}" oncontextmenu="removeFromWatchlist('${quote.ticker}')" title="Kliknij prawym, aby usunąć">
+                ${logoHTML}
                 <div class="wl-info">
                     <div class="wl-ticker">${quote.ticker}</div>
                     <div class="wl-name">${quote.name}</div>
                 </div>
                 <div class="wl-price-container">
-                    <div class="wl-price">${quote.price.toFixed(2)}</div>
-                    <div class="wl-change ${changeClass}">${sign}${quote.changePercent.toFixed(2)}%</div>
+                    <div class="wl-price">${formattedPrice}</div>
+                    <div class="wl-change ${changeClass}">${sign}${formattedChange}%</div>
                 </div>
             </div>`;
         }
     } catch (error) {
-        console.error('Nie udało się pobrać danych dla watchosty:', error);
+        console.error('Nie udało się pobrać danych dla watchlisty:', error);
     }
 
     container.innerHTML = html;
