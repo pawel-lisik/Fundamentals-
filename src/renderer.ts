@@ -50,6 +50,8 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         { label: 'Net income', tags: [
             'NetIncomeLoss',
             'ProfitLoss',
+            'NetIncomeLossAvailableToCommonStockholders',
+            'NetIncomeLossAllocatedToCommonStockholders',
             'NetIncomeLossAvailableToCommonStockholdersBasic',
             'IncomeLossFromContinuingOperations',
             'IncomeLossFromContinuingOperationsNetOfTax'
@@ -161,7 +163,7 @@ let quarterlyEarningsChartInstance: any = null;
 let earningsChartInstance: any = null;
 
 let rawSecData: any = null;
-
+let fallbackEpsData: Record<string, any> | null = null;
 
 const currentYear = new Date().getFullYear();
 const YEARS_TO_FETCH = 20;
@@ -453,7 +455,7 @@ async function loadSecData(ticker: string) {
 
     try {
         // POBIERANIE RÓWNOLEGŁE (Dodane getSplits)
-        const [secRes, priceRes, quoteRes, newsRes, similarRes, earningsRes, splitsRes] = await Promise.all([
+        const [secRes, priceRes, quoteRes, newsRes, similarRes, earningsRes, splitsRes, fallbackRes] = await Promise.all([
             (window as any).electronAPI.fetchSecData(ticker),
             (window as any).electronAPI.getHistoricalPrices(ticker),
             (window as any).electronAPI.getYahooQuote(ticker),
@@ -461,7 +463,8 @@ async function loadSecData(ticker: string) {
             (window as any).electronAPI.getSimilarCompanies(ticker),
             (window as any).electronAPI.getEarningsData(ticker),
             // Używamy opcjonalnego wywołania, na wypadek gdyby API jeszcze nie istniało w main.ts
-            (window as any).electronAPI.getSplits ? (window as any).electronAPI.getSplits(ticker) : Promise.resolve([]) 
+            (window as any).electronAPI.getSplits ? (window as any).electronAPI.getSplits(ticker) : Promise.resolve([]),
+            (window as any).electronAPI.getFallbackEps(ticker) 
         ]);
         
         rawSecData = secRes;
@@ -471,6 +474,7 @@ async function loadSecData(ticker: string) {
         similarCompaniesData = similarRes;
         currentEarningsData = earningsRes;
         rawSplitsData = splitsRes || []; // <-- Zapis splitów
+        fallbackEpsData = fallbackRes;
 
         if (currentQuoteInfo && currentQuoteInfo.sector) {
             sectorPriceData = await (window as any).electronAPI.getSectorHistoricalPrices(currentQuoteInfo.sector);
@@ -1101,6 +1105,18 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
         const isShares = tags.some(t => t.toLowerCase().includes('sharesoutstanding'));
 
         let val = getRawValue(tags, year, isQuarterlyMode, quarterStr, isCashFlow);
+
+        // --- DODANY MECHANIZM FALLBACK DLA BRAKUJĄCYCH EPS (np. Visa) ---
+        if ((val === null || val === undefined) && isPerShare && currentLoadedTicker === 'V' && fallbackEpsData) {
+            // Generujemy klucz pasujący do formatu słownika (np. "2023" lub "2023 Q1")
+            const fallbackKey = isQuarterlyMode ? `${year} ${quarterStr}` : `${year}`;
+            const fallbackRecord = fallbackEpsData[fallbackKey];
+            
+            if (fallbackRecord) {
+                const isDiluted = tags.some(t => t.toLowerCase().includes('diluted'));
+                val = isDiluted ? fallbackRecord.diluted : fallbackRecord.basic;
+            }
+        }
 
         if (isQuarterlyMode && !isBalance) {
             if (isCashFlow) {

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
-
+import { fetchAndSyncVisaEps } from './fallbackScraper';
 // --- INICJALIZACJA YAHOO FINANCE 2 (POPRAWIONA) ---
 const yfModule = require('yahoo-finance2');
 const YahooFinanceClass = yfModule.default || yfModule;
@@ -497,4 +497,16 @@ ipcMain.handle('getSplits', async (event, ticker) => {
         console.error(`Błąd podczas pobierania splitów dla ${ticker}:`, error);
         return [];
     }
+});
+
+ipcMain.handle('get-fallback-eps', async (event, ticker: string) => {
+    // Fallback uruchamiany jest wyłącznie dla spółki Visa
+    if (ticker.toUpperCase() === 'V') {
+        try {
+            return await fetchAndSyncVisaEps();
+        } catch (error) {
+            console.error("Błąd zapasowego scrapowania Visa EPS:", error);
+        }
+    }
+    return null;
 });
