@@ -1104,49 +1104,54 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
         const isPerShare = tags.some(t => t.includes('PerShare')); // <--- Sprawdzamy czy to EPS/DPS
         const isShares = tags.some(t => t.toLowerCase().includes('sharesoutstanding'));
 
-        let val = getRawValue(tags, year, isQuarterlyMode, quarterStr, isCashFlow);
-
-        // --- DODANY MECHANIZM FALLBACK DLA BRAKUJĄCYCH EPS (np. Visa) ---
-        if ((val === null || val === undefined) && isPerShare && currentLoadedTicker === 'V' && fallbackEpsData) {
-            // Generujemy klucz pasujący do formatu słownika (np. "2023" lub "2023 Q1")
-            const fallbackKey = isQuarterlyMode ? `${year} ${quarterStr}` : `${year}`;
-            const fallbackRecord = fallbackEpsData[fallbackKey];
+        // --- NOWA FUNKCJA POMOCNICZA: Pobiera z SEC, a w razie braku łata dane ze scrapera ---
+        const getEffectiveValue = (tgs: string[], y: number, isQ: boolean, qStr: string | null, isCF: boolean) => {
+            let v = getRawValue(tgs, y, isQ, qStr, isCF);
             
-            if (fallbackRecord) {
-                const isDiluted = tags.some(t => t.toLowerCase().includes('diluted'));
-                val = isDiluted ? fallbackRecord.diluted : fallbackRecord.basic;
+            // Aplikowanie danych ze scrapera (np. Visa), jeśli SEC nie ma danych
+            if ((v === null || v === undefined) && isPerShare && currentLoadedTicker === 'V' && fallbackEpsData) {
+                const fallbackKey = isQ ? `${y} ${qStr}` : `${y}`;
+                const fallbackRecord = fallbackEpsData[fallbackKey];
+                if (fallbackRecord) {
+                    const isDiluted = tgs.some(t => t.toLowerCase().includes('diluted'));
+                    v = isDiluted ? fallbackRecord.diluted : fallbackRecord.basic;
+                }
             }
-        }
+            return v;
+        };
+
+        // Zamiast getRawValue, używamy naszego nowego getEffectiveValue
+        let val = getEffectiveValue(tags, year, isQuarterlyMode, quarterStr, isCashFlow);
 
         if (isQuarterlyMode && !isBalance) {
             if (isCashFlow) {
                 // Cash Flow z SEC jest w formacie narastającym (YTD).
                 if (quarterStr === 'Q2') {
-                    const q1 = getRawValue(tags, year, true, 'Q1', true);
-                    const q2ytd = getRawValue(tags, year, true, 'Q2', true); 
+                    const q1 = getEffectiveValue(tags, year, true, 'Q1', true);
+                    const q2ytd = getEffectiveValue(tags, year, true, 'Q2', true); 
                     if (q2ytd !== null && q1 !== null) val = q2ytd - q1;
                 } 
                 else if (quarterStr === 'Q3') {
-                    const q2ytd = getRawValue(tags, year, true, 'Q2', true); 
-                    const q3ytd = getRawValue(tags, year, true, 'Q3', true); 
+                    const q2ytd = getEffectiveValue(tags, year, true, 'Q2', true); 
+                    const q3ytd = getEffectiveValue(tags, year, true, 'Q3', true); 
                     if (q3ytd !== null && q2ytd !== null) val = q3ytd - q2ytd;
                 } 
                 else if (quarterStr === 'Q4') {
-                    const fy = getRawValue(tags, year, false, null); 
-                    const q3ytd = getRawValue(tags, year, true, 'Q3', true); 
+                    const fy = getEffectiveValue(tags, year, false, null, false); 
+                    const q3ytd = getEffectiveValue(tags, year, true, 'Q3', true); 
                     if (fy !== null && q3ytd !== null) val = fy - q3ytd;
                 }
             } else {
                 // Income Statement 
                 if (quarterStr === 'Q4') {
-                    const fy = getRawValue(tags, year, false, null);
-                    const q1 = getRawValue(tags, year, true, 'Q1', false);
-                    const q2 = getRawValue(tags, year, true, 'Q2', false);
-                    const q3 = getRawValue(tags, year, true, 'Q3', false);
+                    // TUTAJ BYŁ BŁĄD - pobieramy składowe przy pomocy getEffectiveValue!
+                    const fy = getEffectiveValue(tags, year, false, null, false);
+                    const q1 = getEffectiveValue(tags, year, true, 'Q1', false);
+                    const q2 = getEffectiveValue(tags, year, true, 'Q2', false);
+                    const q3 = getEffectiveValue(tags, year, true, 'Q3', false);
 
                     if (fy !== null && q1 !== null && q2 !== null && q3 !== null) {
                         if (isShares) {
-                            // Średnia ważona roczna to (Q1+Q2+Q3+Q4)/4, stąd Q4 = 4*FY - (Q1+Q2+Q3)
                             const splitFY = splitFactors[`${year} Q4`] || 1.0;
                             const splitQ1 = splitFactors[`${year} Q1`] || 1.0;
                             const splitQ2 = splitFactors[`${year} Q2`] || 1.0;
@@ -1160,7 +1165,6 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                             const normQ4 = (4 * normFY) - (normQ1 + normQ2 + normQ3);
                             val = normQ4 / splitFY;
                         } else if (isPerShare) {
-                            // --- ROZWIĄZANIE PROBLEMU: Znormalizowanie splitów przed odejmowaniem ---
                             const splitFY = splitFactors[`${year} Q4`] || 1.0;
                             const splitQ1 = splitFactors[`${year} Q1`] || 1.0;
                             const splitQ2 = splitFactors[`${year} Q2`] || 1.0;
@@ -1172,14 +1176,12 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                             const normQ3 = q3 / splitQ3;
 
                             const normQ4 = normFY - (normQ1 + normQ2 + normQ3);
-
-                            // Główna pętla niżej dzieli wynik przez splitFactors[col], odwracamy operację dla spójności
                             val = normQ4 * splitFY;
                         } else {
                             val = fy - (q1 + q2 + q3);
                         }
                     } else if (isShares && fy !== null) {
-                        val = fy; // Bezpieczny fallback dla brakujących pojedynczych kwartałów
+                        val = fy; 
                     }
                 }
             }
