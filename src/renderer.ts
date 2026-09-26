@@ -86,15 +86,49 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
     ],
     balance: [
         { label: 'Assets', tags: [], style: 'header' },
-        { label: 'Cash & Equivalents', tags: ['CashAndCashEquivalentsAtCarryingValue'], style: 'sub' },
+        { label: 'Current Assets', tags: [], style: 'header' },
+        { label: 'Cash & Equivalents', tags: ['CashAndCashEquivalentsAtCarryingValue', 'Cash'], style: 'sub' },
+        { label: 'Accounts Receivable', tags: ['AccountsReceivableNetCurrent', 'AccountsAndNotesReceivableNet'], style: 'sub' },
+        { label: 'Inventory', tags: ['InventoryNet'], style: 'sub' },
         { label: 'Total Current Assets', tags: ['AssetsCurrent'], style: 'total' },
-        { label: 'Total Assets', tags: ['Assets'], style: 'total' },
         { label: 'space1', tags: [], style: 'empty' },
-        { label: 'Liabilities & Equity', tags: [], style: 'header' },
-        { label: 'Total Current Liabilities', tags: ['LiabilitiesCurrent'], style: 'sub' },
+        
+        { label: 'Non-Current Assets', tags: [], style: 'header' },
+        { label: 'Property, Plant & Equipment (Gross)', tags: ['PropertyPlantAndEquipmentGross'], style: 'sub' },
+        { label: 'Accumulated Depreciation', tags: ['AccumulatedDepreciationDepletionAndAmortizationPropertyPlantAndEquipment'], style: 'sub' },
+        { label: 'Net Carrying Value (PPE Net)', tags: ['PropertyPlantAndEquipmentNet'], style: 'sub' },
+        { label: 'Total Non-Current Assets', tags: ['AssetsNoncurrent'], style: 'total' },
+        { label: 'space2', tags: [], style: 'empty' },
+        
+        { label: 'Total Assets', tags: ['Assets'], style: 'total' },
+        { label: 'space3', tags: [], style: 'empty' },
+        { label: 'space3b', tags: [], style: 'empty' },
+        { label: 'space3c', tags: [], style: 'empty' },
+        
+        { label: 'Liabilities', tags: [], style: 'header' },
+        { label: 'Current Liabilities', tags: [], style: 'header' },
+        { label: 'Accounts Payable', tags: ['AccountsPayableCurrent'], style: 'sub' },
+        { label: 'Loans / Short-Term Debt', tags: ['ShortTermBorrowings', 'LongTermDebtCurrent', 'DebtCurrent'], style: 'sub' },
+        { label: 'Unearned Revenue', tags: ['ContractWithCustomerLiabilityCurrent', 'DeferredRevenueCurrent'], style: 'sub' },
+        { label: 'Unpaid Taxes', tags: ['AccruedIncomeTaxesCurrent', 'TaxesPayableCurrent'], style: 'sub' },
+        { label: 'Total Current Liabilities', tags: ['LiabilitiesCurrent'], style: 'total' },
+        { label: 'space4', tags: [], style: 'empty' },
+        
+        { label: 'Non-Current Liabilities', tags: [], style: 'header' },
+        { label: 'Long-Term Debt', tags: ['LongTermDebtNoncurrent', 'LongTermDebt'], style: 'sub' },
+        { label: 'Total Non-Current Liabilities', tags: ['LiabilitiesNoncurrent'], style: 'total' },
+        { label: 'space5', tags: [], style: 'empty' },
+        
         { label: 'Total Liabilities', tags: ['Liabilities'], style: 'total' },
-        { label: 'Retained Earnings', tags: ['RetainedEarningsAccumulatedDeficit'], style: 'normal' },
-        { label: 'Shareholders Equity', tags: ['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'], style: 'total' }
+        { label: 'space6', tags: [], style: 'empty' },
+        
+        { label: 'Shareholders Equity', tags: [], style: 'header' },
+        { label: 'Equity Capital', tags: ['CommonStockValue', 'CommonStockIncludingAdditionalPaidInCapital'], style: 'sub' },
+        { label: 'Retained Earnings', tags: ['RetainedEarningsAccumulatedDeficit'], style: 'sub' },
+        { label: 'Total Shareholders Equity', tags: ['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'], style: 'total' },
+        { label: 'space7', tags: [], style: 'empty' },
+        
+        { label: 'Total Liabilities & Equity', tags: ['LiabilitiesAndStockholdersEquity'], style: 'total' }
     ],
 
     cashflow: [
@@ -1421,7 +1455,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     }
                 }
             }
-            // 6. Total Liabilities
+            // 6. Total Liabilities 
             else if (def.label === 'Total Liabilities') {
                 const reportedLiab = extractValue(def.tags, col);
                 if (reportedLiab !== null) {
