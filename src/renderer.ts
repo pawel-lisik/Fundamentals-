@@ -969,7 +969,31 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     : (rawData[tag]?.units?.USD || rawData[tag]?.units?.['USD/shares']);
                 
             if (unitData) {
-                let items = unitData.filter((item: any) => item.fy === year);
+                let items = unitData.filter((item: any) => {
+                    // 1. Główne dopasowanie (poprawne raporty, dobrze działa dla firm jak Apple czy Nvidia)
+                    if (item.fy === year) return true;
+                    
+                    // 2. Fallback na wypadek błędu SEC (jak w SPGI, gdzie 2024 dostało fy: 2025)
+                    // Parametr 'frame' jednoznacznie i sztywno wiąże dane z rokiem kalendarzowym (CY).
+                    if (item.frame) {
+                        if (!isQuarterly && item.frame === `CY${year}`) {
+                            return true;
+                        }
+                        if (isQuarterly && quarterStr) {
+                            // CY2024Q3 (Income) lub CY2024Q3I (Instant - Balance Sheet)
+                            if (item.frame === `CY${year}${quarterStr}` || item.frame === `CY${year}${quarterStr}I`) {
+                                return true;
+                            }
+                        }
+                    }
+
+                    // 3. Ostatnia deska ratunku: twarde sprawdzanie faktycznych dat z raportu
+                    if (!isQuarterly && item.start === `${year}-01-01` && item.end === `${year}-12-31`) {
+                        return true;
+                    }
+
+                    return false;
+                });
                 
                 if (!isQuarterly) {
                     items = items.filter((item: any) => {
@@ -1044,7 +1068,19 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
         for (const tag of ['NetIncomeLoss', 'ProfitLoss', 'Assets']) {
             const unitData = rawData[tag]?.units?.USD;
             if (unitData) {
-                let items = unitData.filter((item: any) => item.fy === year);
+                // NOWA WERSJA (z uwzględnieniem parametru 'frame'):
+                let items = unitData.filter((item: any) => {
+                    if (item.fy === year) return true;
+                    if (item.frame) {
+                        if (!isQuarterlyMode && item.frame === `CY${year}`) return true;
+                        if (isQuarterlyMode && quarterStr) {
+                            if (item.frame === `CY${year}${quarterStr}` || item.frame === `CY${year}${quarterStr}I`) return true;
+                        }
+                    }
+                    if (!isQuarterlyMode && item.start === `${year}-01-01` && item.end === `${year}-12-31`) return true;
+                    return false;
+                });
+
                 if (isQuarterlyMode) {
                     items = items.filter((item: any) => item.fp === (quarterStr === 'Q4' ? 'FY' : quarterStr));
                 } else {
@@ -1254,6 +1290,11 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     price: getClosestPrice(periodEndDates[col]) 
                 };
 
+                // NOWE: Fallback dla Amazona (i innych) brakuje 'Liabilities'
+                if (calc.liab === null && calc.assets !== null && calc.equity !== null) {
+                    calc.liab = calc.assets - calc.equity;
+                }
+
                 if (calc.eps !== null) calc.eps /= splitFactor;
                 if (calc.dps !== null) calc.dps /= splitFactor;
 
@@ -1380,7 +1421,24 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     }
                 }
             }
-            // 6. Standardowe zyski i przychody bazowe
+            // 6. Total Liabilities
+            else if (def.label === 'Total Liabilities') {
+                const reportedLiab = extractValue(def.tags, col);
+                if (reportedLiab !== null) {
+                    values[col] = reportedLiab;
+                } else {
+                    // Czasem zamiast Assets używają 'LiabilitiesAndStockholdersEquity'
+                    const assets = extractValue(['Assets', 'LiabilitiesAndStockholdersEquity'], col);
+                    const equity = extractValue(['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'], col);
+                    
+                    if (assets !== null && equity !== null) {
+                        values[col] = assets - equity;
+                    } else {
+                        values[col] = null;
+                    }
+                }
+            }
+            // 7. Standardowe zyski i przychody bazowe
             else {
                 values[col] = extractValue(def.tags, col);
             }
