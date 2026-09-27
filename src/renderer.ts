@@ -166,17 +166,15 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
             style: 'normal' 
         }
     ],
-indicators: [
+
+    indicators: [
+        { label: 'P/E Ratio', tags: [], style: 'normal', format: 'missing_price' },
+        { label: 'P/BV Ratio', tags: [], style: 'normal', format: 'missing_price' },
         { label: 'Return on Equity (ROE)', tags: [], style: 'normal', format: 'percent' },
         { label: 'Return on Assets (ROA)', tags: [], style: 'normal', format: 'percent' },
         { label: 'Return on Invested Capital (ROIC)', tags: [], style: 'normal', format: 'percent' },
-        { label: 'space1', tags: [], style: 'empty' },
         { label: 'Current Ratio', tags: [], style: 'normal', format: 'ratio' },
-        { label: 'Debt Ratio', tags: [], style: 'normal', format: 'percent' },
-        { label: 'space2', tags: [], style: 'empty' },
-        { label: 'EPS (Diluted)', tags: ['EarningsPerShareDiluted', 'EarningsPerShareBasic'], style: 'normal', format: 'decimal' },
-        { label: 'P/E Ratio', tags: [], style: 'normal', format: 'missing_price' },
-        { label: 'P/BV Ratio', tags: [], style: 'normal', format: 'missing_price' }
+        { label: 'Debt Ratio', tags: [], style: 'normal', format: 'percent' }
     ],
     dividends: [
         { label: 'Dividends Paid (Total)', tags: ['PaymentsOfDividendsCommonStock', 'DividendsCommonStock', 'Dividends'], style: 'normal', format: 'currency' },
@@ -198,6 +196,21 @@ let earningsChartInstance: any = null;
 
 let rawSecData: any = null;
 let fallbackEpsData: Record<string, any> | null = null;
+
+let indChartValuation: any = null;
+let indChartProfit: any = null;
+let indChartLiquid: any = null;
+
+let activeValuationChart = 'P/E Ratio';
+let activeProfitChart = 'Return on Equity (ROE)';
+let activeLiquidChart = 'Current Ratio';
+
+(window as any).switchIndChart = function(section: string, chartName: string) {
+    if (section === 'valuation') activeValuationChart = chartName;
+    if (section === 'profit') activeProfitChart = chartName;
+    if (section === 'liquid') activeLiquidChart = chartName;
+    renderData();
+};
 
 const currentYear = new Date().getFullYear();
 const YEARS_TO_FETCH = 20;
@@ -555,6 +568,142 @@ function formatRecommendation(key: string | null): { text: string; color: string
             return { text: key.toUpperCase().replace('_', ' '), color: 'var(--text-primary)' };
     }
 }
+
+// === FUNKCJE POMOCNICZE DLA INDICATORS ===
+function generateTableHTML(data: any[], columns: string[]) {
+    let html = `<div class="ind-table-wrapper" style="width: 100%; overflow-x: auto; margin-bottom: 8px; border-radius: 6px; border: 1px solid var(--border-color, rgba(150,150,150,0.2));">
+        <table class="tv-table" style="margin-bottom: 0; width: 100%;">
+        <thead>
+            <tr>
+                <th class="sticky-col"></th>
+                ${columns.map(col => `<th>${col}</th>`).join('')}
+            </tr>
+        </thead>
+        <tbody>`;
+
+    for (const row of data) {
+        let trClass = row.style === 'total' ? 'row-total' : '';
+        let tdClass = 'sticky-col';
+        if (row.style === 'sub') tdClass += ' row-sub';
+
+        html += `<tr class="${trClass}"><td class="${tdClass}">${row.label}</td>`;
+
+        columns.forEach(col => {
+            const val = row.values[col];
+            let displayVal = '';
+
+            if (row.format === 'missing_price') displayVal = '<span style="color: #aaa; font-size: 11px;">Wymaga ceny</span>';
+            else if (val !== null && val !== undefined) displayVal = formatTypedValue(val, row.format);
+            else displayVal = '—';
+
+            html += `<td>${displayVal}</td>`;
+        });
+
+        html += `</tr>`;
+    }
+
+    html += `</tbody></table></div>`;
+    return html;
+}
+
+function drawIndicatorChart(canvasId: string, chartInstanceRef: any, rowLabel: string, tableData: any[], displayColumns: string[], color: string) {
+    const ctx = document.getElementById(canvasId) as HTMLCanvasElement;
+    if (!ctx) return chartInstanceRef;
+
+    if (chartInstanceRef) {
+        chartInstanceRef.destroy();
+    }
+
+    const row = tableData.find(r => r.label === rowLabel);
+    if (!row) return null;
+
+    const dataPoints = displayColumns.map(col => row.values[col] !== null ? row.values[col] : null);
+    const validPoints = dataPoints.filter(v => v !== null) as number[];
+    
+    let avg = 0;
+    
+    // --- ZMIANA: Sztywna wartość średniej dla Current Ratio ---
+    if (rowLabel === 'Current Ratio') {
+        avg = 1.0;
+    } else {
+        if (validPoints.length > 0) {
+            avg = validPoints.reduce((a, b) => a + b, 0) / validPoints.length;
+        }
+    }
+    // ---------------------------------------------------------
+    
+    const avgPoints = dataPoints.map(() => avg);
+
+    // Etykieta legendy (np. dla Current Ratio to będzie "Optimum (1.00)")
+    const avgLegendLabel = rowLabel === 'Current Ratio' 
+        ? `Optimum (1.00)` 
+        : `Średnia (${row.format === 'percent' ? avg.toFixed(2) + '%' : avg.toFixed(2)})`;
+
+    const newChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: displayColumns,
+            datasets: [
+                {
+                    label: rowLabel,
+                    data: dataPoints,
+                    borderColor: color,
+                    backgroundColor: color + '1A',
+                    borderWidth: 2,
+                    pointRadius: 4,
+                    fill: true,
+                    spanGaps: false,
+                    tension: 0.2
+                },
+                {
+                    label: avgLegendLabel,
+                    data: avgPoints,
+                    borderColor: 'rgba(255, 82, 82, 0.8)',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    pointRadius: 0,
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: { usePointStyle: true, boxWidth: 8, color: 'var(--text-primary)' }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context: any) {
+                            let val = context.parsed.y;
+                            if (val === null) return null;
+                            if (row.format === 'percent') val = val.toFixed(2) + '%';
+                            else val = val.toFixed(2);
+                            return `${context.dataset.label}: ${val}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { 
+                    grid: { display: false }, 
+                    ticks: { color: 'var(--text-secondary)' } 
+                },
+                y: { 
+                    grid: { color: 'rgba(150, 150, 150, 0.1)' },
+                    ticks: { color: 'var(--text-secondary)' }
+                }
+            }
+        }
+    });
+
+    return newChart;
+}
+// ==========================================
 
 
 function renderData() {
@@ -943,7 +1092,7 @@ function renderData() {
     tableContainer.style.display = 'block';
     subTabs.style.display = currentMainTab === 'statements' ? 'flex' : 'none';
 
-const columns = currentPeriod === 'annual' ? getAnnualColumns() : getQuarterlyColumns();
+    const columns = currentPeriod === 'annual' ? getAnnualColumns() : getQuarterlyColumns();
     const metricsToUse = currentMainTab === 'statements' ? METRICS_MAP[currentTab] : METRICS_MAP[currentMainTab];
     
     // Zabezpieczenie przed brakiem definicji dla nowych pustych zakładek (macro)
@@ -959,14 +1108,263 @@ const columns = currentPeriod === 'annual' ? getAnnualColumns() : getQuarterlyCo
         .filter(col => parseInt(col.substring(0, 4)) >= 2009)
         .reverse();
 
+
+    // =========================================================================
+    // --- NOWA LOGIKA GENEROWANIA WIDOKU INDICATORS (ZASTĘPUJE STANDARDOWE RENDERY)
+    // =========================================================================
+    if (currentMainTab === 'indicators') {
+        const chartWrapper = document.getElementById('chart-wrapper');
+        if (chartWrapper) chartWrapper.style.display = 'none'; 
+
+        const valuationRows = tableData.filter(r => ['P/E Ratio', 'P/BV Ratio'].includes(r.label));
+        const profitRows = tableData.filter(r => ['Return on Equity (ROE)', 'Return on Assets (ROA)', 'Return on Invested Capital (ROIC)'].includes(r.label));
+        const liquidRows = tableData.filter(r => ['Current Ratio', 'Debt Ratio'].includes(r.label));
+
+        tableContainer.style.display = 'block';
+        tableContainer.innerHTML = `
+            <div style="display: flex; flex-direction: column; gap: 32px; margin-top: 10px;">
+                <!-- Sekcja Wycena -->
+                <h3>Valuation</h3>
+                <div style="background: var(--bg-secondary, rgba(150, 150, 150, 0.05)); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color, rgba(150,150,150,0.2));">
+                    <div style="display: flex; gap: 8px; margin-bottom: 12px; justify-content: center;">
+                        <button class="toggle-btn ${activeValuationChart === 'P/E Ratio' ? 'active' : ''}" onclick="window.switchIndChart('valuation', 'P/E Ratio')">P/E Ratio</button>
+                        <button class="toggle-btn ${activeValuationChart === 'P/BV Ratio' ? 'active' : ''}" onclick="window.switchIndChart('valuation', 'P/BV Ratio')">P/BV Ratio</button>
+                    </div>
+                    <div style="height: 450px; width: 100%; position: relative; margin-bottom: 16px;">
+                        <canvas id="ind-chart-valuation"></canvas>
+                    </div>
+                    ${generateTableHTML(valuationRows, displayColumns)}
+                </div>
+
+                <!-- Sekcja Rentowność -->
+                <h3>Profitability</h3>
+                <div style="background: var(--bg-secondary, rgba(150, 150, 150, 0.05)); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color, rgba(150,150,150,0.2));">
+                    <div style="display: flex; gap: 8px; margin-bottom: 12px; justify-content: center;">
+                        <button class="toggle-btn ${activeProfitChart === 'Return on Equity (ROE)' ? 'active' : ''}" onclick="window.switchIndChart('profit', 'Return on Equity (ROE)')">ROE</button>
+                        <button class="toggle-btn ${activeProfitChart === 'Return on Assets (ROA)' ? 'active' : ''}" onclick="window.switchIndChart('profit', 'Return on Assets (ROA)')">ROA</button>
+                        <button class="toggle-btn ${activeProfitChart === 'Return on Invested Capital (ROIC)' ? 'active' : ''}" onclick="window.switchIndChart('profit', 'Return on Invested Capital (ROIC)')">ROIC</button>
+                    </div>
+                    <div style="height: 250px; width: 100%; position: relative; margin-bottom: 16px;">
+                        <canvas id="ind-chart-profit"></canvas>
+                    </div>
+                    ${generateTableHTML(profitRows, displayColumns)}
+                </div>
+
+                <!-- Sekcja Płynność i Zadłużenie -->
+                <h3>Liquidity</h3>
+                <div style="background: var(--bg-secondary, rgba(150, 150, 150, 0.05)); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color, rgba(150,150,150,0.2));">
+                    <div style="display: flex; gap: 8px; margin-bottom: 12px; justify-content: center;">
+                        <button class="toggle-btn ${activeLiquidChart === 'Current Ratio' ? 'active' : ''}" onclick="window.switchIndChart('liquid', 'Current Ratio')">Current Ratio</button>
+                        <button class="toggle-btn ${activeLiquidChart === 'Debt Ratio' ? 'active' : ''}" onclick="window.switchIndChart('liquid', 'Debt Ratio')">Debt Ratio</button>
+                    </div>
+                    <div style="height: 250px; width: 100%; position: relative; margin-bottom: 16px;">
+                        <canvas id="ind-chart-liquid"></canvas>
+                    </div>
+                    ${generateTableHTML(liquidRows, displayColumns)}
+                </div>
+                <h3>Solvency</h3>
+            </div>
+        `;
+
+        // --- 1. WYKRES DLA WYCENY (DZIENNY) ---
+        const ctxValuation = document.getElementById('ind-chart-valuation') as HTMLCanvasElement;
+        if (ctxValuation) {
+            if (indChartValuation) {
+                indChartValuation.destroy();
+            }
+
+            const dailyDataPoints: (number | null)[] = [];
+            const dateLabels: string[] = [];
+            
+            // Mapowanie kwartalnych wartości do codziennych cen
+            const quarterlyDict: { time: number, value: number }[] = [];
+            const qCols = getQuarterlyColumns();
+            
+            if (activeValuationChart === 'P/E Ratio') {
+                // Dla P/E potrzebujemy TTM EPS (suma 4 kwartałów)
+                const qIncomeData = processSecData(METRICS_MAP.income, qCols);
+                const qDilutedRow = qIncomeData.find(r => r.label === 'Diluted') ?? qIncomeData.find(r => r.label === 'Basic');
+
+                if (qDilutedRow) {
+                    for (let i = 0; i < qCols.length; i++) {
+                        let ttmSum = 0;
+                        let valid = true;
+                        for (let j = 0; j < 4; j++) {
+                            if (i + j >= qCols.length) { valid = false; break; }
+                            const val = qDilutedRow.values[qCols[i + j]];
+                            if (val == null) { valid = false; break; }
+                            ttmSum += Number(val);
+                        }
+                        if (valid) {
+                            const col = qCols[i];
+                            let targetTime = periodEndDates[col];
+                            
+                            if (!targetTime) {
+                                const year = parseInt(col.substring(0, 4));
+                                const q = col.substring(5, 7);
+                                let month = 11, day = 31;
+                                if (q === 'Q1') { month = 2; day = 31; }
+                                else if (q === 'Q2') { month = 5; day = 30; }
+                                else if (q === 'Q3') { month = 8; day = 30; }
+                                targetTime = new Date(year, month, day).getTime();
+                            }
+                            
+                            const dateNum = targetTime + (45 * 86400000);
+                            quarterlyDict.push({ time: dateNum, value: ttmSum });
+                        }
+                    }
+                }
+            } else if (activeValuationChart === 'P/BV Ratio') {
+                 // Dla P/BV potrzebujemy Book Value per Share (Equity / Shares) na dany kwartał
+                 const qBalanceData = processSecData(METRICS_MAP.balance, qCols);
+                 const qIncomeData = processSecData(METRICS_MAP.income, qCols);
+                 
+                 const equityRow = qBalanceData.find(r => r.label === 'Total Shareholders Equity');
+                 const epsRow = qIncomeData.find(r => r.label === 'Diluted') ?? qIncomeData.find(r => r.label === 'Basic');
+                 const netIncomeRow = qIncomeData.find(r => r.label === 'Net income');
+
+                 if (equityRow && epsRow && netIncomeRow) {
+                     for (let i = 0; i < qCols.length; i++) {
+                         const col = qCols[i];
+                         const equity = equityRow.values[col];
+                         const eps = epsRow.values[col];
+                         const netIncome = netIncomeRow.values[col];
+                         
+                         if (equity != null && eps != null && netIncome != null && eps !== 0) {
+                             const sharesOutstanding = netIncome / eps;
+                             if (sharesOutstanding !== 0) {
+                                 const bvps = equity / sharesOutstanding;
+                                 
+                                 let targetTime = periodEndDates[col];
+                                 if (!targetTime) {
+                                     const year = parseInt(col.substring(0, 4));
+                                     const q = col.substring(5, 7);
+                                     let month = 11, day = 31;
+                                     if (q === 'Q1') { month = 2; day = 31; }
+                                     else if (q === 'Q2') { month = 5; day = 30; }
+                                     else if (q === 'Q3') { month = 8; day = 30; }
+                                     targetTime = new Date(year, month, day).getTime();
+                                 }
+                                 
+                                 const dateNum = targetTime + (45 * 86400000);
+                                 quarterlyDict.push({ time: dateNum, value: bvps });
+                             }
+                         }
+                     }
+                 }
+            }
+
+            quarterlyDict.sort((a, b) => a.time - b.time);
+
+            let currentFundamentalValue: number | null = null;
+            let valIdx = 0;
+
+            if (rawPriceData && rawPriceData.length > 0) {
+                for (const quote of rawPriceData) {
+                    if (!quote.date) continue;
+                    const dateObj = new Date(quote.date);
+                    const quoteTime = dateObj.getTime();
+                    const price = quote.close ?? quote.adjClose;
+
+                    while (valIdx < quarterlyDict.length && quarterlyDict[valIdx].time <= quoteTime) {
+                        currentFundamentalValue = quarterlyDict[valIdx].value;
+                        valIdx++;
+                    }
+
+                    dateLabels.push(dateObj.toISOString().split('T')[0]);
+
+                    if (currentFundamentalValue && currentFundamentalValue > 0 && price) {
+                        const ratio = Number(price) / currentFundamentalValue;
+                        if (ratio > 0 && ratio < 500) {
+                            dailyDataPoints.push(ratio);
+                        } else {
+                            dailyDataPoints.push(null);
+                        }
+                    } else {
+                        dailyDataPoints.push(null);
+                    }
+                }
+            }
+
+            let averageRatio = 0;
+            const validRatios = dailyDataPoints.filter(val => val !== null) as number[];
+            if (validRatios.length > 0) {
+                const sumRatio = validRatios.reduce((acc, val) => acc + val, 0);
+                averageRatio = sumRatio / validRatios.length;
+            }
+            
+            const averageDataPoints = dailyDataPoints.map(() => averageRatio);
+            
+            const rowDef = valuationRows.find(r => r.label === activeValuationChart);
+            const isPercent = rowDef?.format === 'percent';
+
+            indChartValuation = new Chart(ctxValuation, {
+                type: 'line',
+                data: {
+                    labels: dateLabels,
+                    datasets: [{
+                        label: `${activeValuationChart} (Daily)`,
+                        data: dailyDataPoints,
+                        borderColor: '#2962FF',
+                        backgroundColor: 'rgba(41, 98, 255, 0.1)',
+                        borderWidth: 1.5,
+                        pointRadius: 0,
+                        fill: true,
+                        spanGaps: false,
+                    },
+                    {
+                        label: `Średnia (${isPercent ? averageRatio.toFixed(2) + '%' : averageRatio.toFixed(2)})`, 
+                        data: averageDataPoints,
+                        borderColor: 'rgba(255, 82, 82, 0.8)', 
+                        borderWidth: 2,
+                        borderDash: [5, 5], 
+                        pointRadius: 0,
+                        fill: false,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: { 
+                         legend: {
+                            display: true,
+                            position: 'top',
+                            labels: { usePointStyle: true, boxWidth: 8, color: 'var(--text-primary)' }
+                        }
+                    }, 
+                    scales: {
+                        x: { ticks: { maxTicksLimit: 10, color: 'var(--text-secondary)' }, grid: { display: false } },
+                        y: { grid: { color: 'rgba(150, 150, 150, 0.1)' }, ticks: { color: 'var(--text-secondary)' } }
+                    }
+                }
+            });
+        }
+
+
+        // --- 2. WYKRES DLA RENTOWNOŚCI (ROCZNY/KWARTALNY) ---
+        indChartProfit = drawIndicatorChart('ind-chart-profit', indChartProfit, activeProfitChart, profitRows, displayColumns, '#00E676');
+        
+        // --- 3. WYKRES DLA PŁYNNOŚCI (ROCZNY/KWARTALNY) ---
+        indChartLiquid = drawIndicatorChart('ind-chart-liquid', indChartLiquid, activeLiquidChart, liquidRows, displayColumns, '#FF9100');
+
+        setTimeout(() => {
+            document.querySelectorAll('.ind-table-wrapper').forEach(el => {
+                el.scrollLeft = el.scrollWidth;
+            });
+        }, 50);
+
+        return; 
+    }
+
     // Do wyrysowania tabeli i wykresu używamy już nowych, obciętych i odwróconych kolumn
     renderCleanTable(tableData, displayColumns);
 
-    const chartData = currentMainTab === 'statements' 
-        ? tableData 
-        : processSecData(METRICS_MAP.income, columns);
-        
-    renderChart(chartData, displayColumns);
+    const chartData = (currentMainTab === 'statements' || currentMainTab === 'dividends') 
+            ? tableData 
+            : processSecData(METRICS_MAP.income, columns);
+            
+        renderChart(chartData, displayColumns);
 
     // =========================================================================
     // NOWE: Automatyczne przewinięcie paska tabeli na sam koniec (do najnowszych lat)
@@ -1845,126 +2243,7 @@ function renderChart(tableData: any[], columns: string[]) {
 // ============================================================
     // 2. INDICATORS
     // ============================================================
-    else if (currentMainTab === 'indicators') {
-        const peDataPoints: (number | null)[] = [];
-        const dateLabels: string[] = [];
-        
-        // --- NOWE: Osobne, precyzyjne wyliczanie TTM EPS ---
-        const quarterlyEpsDict: { time: number, ttmEps: number }[] = [];
-        const qCols = getQuarterlyColumns();
-        const qIncomeData = processSecData(METRICS_MAP.income, qCols);
-        const qDilutedRow = qIncomeData.find(r => r.label === 'Diluted') ?? qIncomeData.find(r => r.label === 'Basic');
 
-        if (qDilutedRow) {
-            for (let i = 0; i < qCols.length; i++) {
-                let ttmSum = 0;
-                let valid = true;
-                for (let j = 0; j < 4; j++) {
-                    if (i + j >= qCols.length) { valid = false; break; }
-                    const val = qDilutedRow.values[qCols[i + j]];
-                    if (val == null) { valid = false; break; }
-                    ttmSum += Number(val);
-                }
-                if (valid) {
-                    const col = qCols[i];
-                    let targetTime = periodEndDates[col];
-                    
-                    if (!targetTime) {
-                        const year = parseInt(col.substring(0, 4));
-                        const q = col.substring(5, 7);
-                        let month = 11, day = 31;
-                        if (q === 'Q1') { month = 2; day = 31; }
-                        else if (q === 'Q2') { month = 5; day = 30; }
-                        else if (q === 'Q3') { month = 8; day = 30; }
-                        targetTime = new Date(year, month, day).getTime();
-                    }
-                    
-                    const dateNum = targetTime + (45 * 86400000);
-                    quarterlyEpsDict.push({ time: dateNum, ttmEps: ttmSum });
-                }
-            }
-            quarterlyEpsDict.sort((a, b) => a.time - b.time);
-        }
-
-        let currentTtmEps: number | null = null;
-        let epsIdx = 0;
-
-        if (rawPriceData && rawPriceData.length > 0) {
-            for (const quote of rawPriceData) {
-                if (!quote.date) continue;
-                const dateObj = new Date(quote.date);
-                const quoteTime = dateObj.getTime();
-                const price = quote.close ?? quote.adjClose;
-
-                // Zaktualizuj aktualny TTM EPS
-                while (epsIdx < quarterlyEpsDict.length && quarterlyEpsDict[epsIdx].time <= quoteTime) {
-                    currentTtmEps = quarterlyEpsDict[epsIdx].ttmEps;
-                    epsIdx++;
-                }
-
-                // 1. ZAWSZE dodajemy datę na oś X (żeby istniał punkt w czasie dla ewentualnej luki)
-                dateLabels.push(dateObj.toISOString().split('T')[0]);
-
-                // 2. Jeśli mamy prawidłowy zysk, wrzucamy wartość, w przeciwnym razie null
-                if (currentTtmEps && currentTtmEps > 0 && price) {
-                    const dailyPE = Number(price) / currentTtmEps;
-                    if (dailyPE > 0 && dailyPE < 500) {
-                        peDataPoints.push(dailyPE);
-                    } else {
-                        peDataPoints.push(null); // Luka w wykresie
-                    }
-                } else {
-                    peDataPoints.push(null); // Luka w wykresie (ujemny EPS)
-                }
-            }
-        }
-
-        // 3. Poprawka do liczenia średniej (filtrujemy tylko rzeczywiste liczby, omijając null)
-        let averagePE = 0;
-        const validPEs = peDataPoints.filter(val => val !== null) as number[];
-        if (validPEs.length > 0) {
-            const sumPE = validPEs.reduce((acc, val) => acc + val, 0);
-            averagePE = sumPE / validPEs.length;
-        }
-        
-        const averageDataPoints = peDataPoints.map(() => averagePE);
-
-        chartInstance = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: dateLabels,
-                datasets: [{
-                    label: 'P/E Ratio (Daily)',
-                    data: peDataPoints,
-                    borderColor: 'rgba(41, 98, 255, 1)',
-                    backgroundColor: 'rgba(41, 98, 255, 0.1)',
-                    borderWidth: 1.5,
-                    pointRadius: 0,
-                    fill: true,
-                    spanGaps: false,
-                },
-                {
-                    label: `Średnie P/E (${averagePE.toFixed(2)})`, 
-                    data: averageDataPoints,
-                    borderColor: 'rgba(255, 82, 82, 0.8)', 
-                    borderWidth: 2,
-                    borderDash: [5, 5], 
-                    pointRadius: 0,
-                    fill: false,
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                plugins: { legend: { display: false } }, // ZABRONIONA NATYWNA LEGENDA
-                scales: {
-                    x: { ticks: { maxTicksLimit: 10 } },
-                    y: { grid: { color: '#f0f0f0' } }
-                }
-            }
-        });
-    }
     // ============================================================
     // 3. STATEMENTS
     // ============================================================
