@@ -12,5 +12,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getMacroData: (countryCode: string) => ipcRenderer.invoke('get-macro-data', countryCode),
     getEarningsData: (ticker:string) => ipcRenderer.invoke('get-earnings-data', ticker),
     getSplits: (ticker:string) => ipcRenderer.invoke('getSplits', ticker),
-    getFallbackEps: (ticker: string) => ipcRenderer.invoke('get-fallback-eps', ticker)
+    getFallbackEps: (ticker: string) => ipcRenderer.invoke('get-fallback-eps', ticker),
+    getDividends: (ticker: string) => ipcRenderer.invoke('getDividends', ticker),
 });

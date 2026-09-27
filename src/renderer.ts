@@ -177,7 +177,6 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         { label: 'Debt Ratio', tags: [], style: 'normal', format: 'percent' }
     ],
     dividends: [
-        { label: 'Dividends Paid (Total)', tags: ['PaymentsOfDividendsCommonStock', 'DividendsCommonStock', 'Dividends'], style: 'normal', format: 'currency' },
         { label: 'Dividend per Share', tags: ['CommonStockDividendsPerShareDeclared', 'CommonStockDividendsPerShareCashPaid'], style: 'normal', format: 'decimal' },
         { label: 'Payout Ratio', tags: [], style: 'normal', format: 'percent' },
         { label: 'Dividend Yield', tags: [], style: 'normal', format: 'missing_price' }
@@ -204,6 +203,8 @@ let indChartLiquid: any = null;
 let activeValuationChart = 'P/E Ratio';
 let activeProfitChart = 'Return on Equity (ROE)';
 let activeLiquidChart = 'Current Ratio';
+
+let rawDividendsData: any[] | null = null;
 
 (window as any).switchIndChart = function(section: string, chartName: string) {
     if (section === 'valuation') activeValuationChart = chartName;
@@ -262,6 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('chart-wrapper'),
                 document.getElementById('sub-tabs-container'),
                 document.getElementById('no-data-msg'),
+                document.getElementById('dividend-table-container'),
                 earningsContainer,
                 macroContainer
             ];
@@ -285,7 +287,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (statementsInfoLabel) statementsInfoLabel.style.display = 'block'; // lub 'flex'
                 }
 
-                if (currentMainTab === 'indicators' || currentMainTab === 'statements') {
+                if (currentMainTab === 'indicators' || currentMainTab === 'statements' || currentMainTab === 'dividends') {
                     if (periodToggle) periodToggle.style.display = 'block';
                 }
 
@@ -502,7 +504,7 @@ async function loadSecData(ticker: string) {
 
     try {
         // POBIERANIE RÓWNOLEGŁE (Dodane getSplits)
-        const [secRes, priceRes, quoteRes, newsRes, similarRes, earningsRes, splitsRes, fallbackRes] = await Promise.all([
+        const [secRes, priceRes, quoteRes, newsRes, similarRes, earningsRes, splitsRes, fallbackRes, dividendsRes] = await Promise.all([
             (window as any).electronAPI.fetchSecData(ticker),
             (window as any).electronAPI.getHistoricalPrices(ticker),
             (window as any).electronAPI.getYahooQuote(ticker),
@@ -511,7 +513,8 @@ async function loadSecData(ticker: string) {
             (window as any).electronAPI.getEarningsData(ticker),
             // Używamy opcjonalnego wywołania, na wypadek gdyby API jeszcze nie istniało w main.ts
             (window as any).electronAPI.getSplits ? (window as any).electronAPI.getSplits(ticker) : Promise.resolve([]),
-            (window as any).electronAPI.getFallbackEps(ticker) 
+            (window as any).electronAPI.getFallbackEps(ticker),
+            (window as any).electronAPI.getDividends ? (window as any).electronAPI.getDividends(ticker) : Promise.resolve([])
         ]);
         
         rawSecData = secRes;
@@ -522,6 +525,7 @@ async function loadSecData(ticker: string) {
         currentEarningsData = earningsRes;
         rawSplitsData = splitsRes || []; // <-- Zapis splitów
         fallbackEpsData = fallbackRes;
+        rawDividendsData = dividendsRes || [];
 
         if (currentQuoteInfo && currentQuoteInfo.sector) {
             sectorPriceData = await (window as any).electronAPI.getSectorHistoricalPrices(currentQuoteInfo.sector);
@@ -716,6 +720,13 @@ function renderData() {
     const subTabs = document.getElementById('sub-tabs-container')!;
     const overviewContainer = document.getElementById('overview-info-container')!;
     const periodToggle = document.getElementById('period-toggle')!;
+    const dividendTableContainer = document.getElementById('dividend-table-container')!;
+
+    if (currentMainTab === 'dividends') {
+        dividendTableContainer.style.display = 'block';
+    } else {
+        dividendTableContainer.style.display = 'none';
+    }
 
     // Jeśli jesteśmy na tabie OVERVIEW
     if (currentMainTab === 'overview') {
@@ -723,6 +734,7 @@ function renderData() {
         subTabs.style.display = 'none';
         overviewContainer.style.display = 'block';
         periodToggle.style.display = 'none';
+        
 
 
         // Zaktualizuj panele statystyk na dole
@@ -1082,7 +1094,7 @@ function renderData() {
         return;
     }
     
-    if (currentMainTab === 'indicators' || currentMainTab === 'statements') {
+    if (currentMainTab === 'indicators' || currentMainTab === 'statements' || currentMainTab === 'dividends') {
         periodToggle.style.display = 'block';
     } else {
         periodToggle.style.display = 'none';
@@ -1365,6 +1377,10 @@ function renderData() {
             : processSecData(METRICS_MAP.income, columns);
             
         renderChart(chartData, displayColumns);
+
+    if (currentMainTab === 'dividends') {
+        renderDividendHistoryTable();
+    }
 
     // =========================================================================
     // NOWE: Automatyczne przewinięcie paska tabeli na sam koniec (do najnowszych lat)
@@ -2247,11 +2263,15 @@ function renderChart(tableData: any[], columns: string[]) {
     // ============================================================
     // 3. STATEMENTS
     // ============================================================
+// ============================================================
+    // 3. STATEMENTS & DIVIDENDS
+    // ============================================================
     else {
         const chartLabels = [...columns];
         let datasets: any[] = [];
         let yScaleOptions: any = {
             ticks: {
+                color: 'var(--text-secondary)',
                 callback: function(value: any) {
                     if (value >= 1.0e9 || value <= -1.0e9) return ((value / 1.0e9).toFixed(1) + 'B');
                     if (value >= 1.0e6 || value <= -1.0e6) return ((value / 1.0e6).toFixed(1) + 'M');
@@ -2263,12 +2283,69 @@ function renderChart(tableData: any[], columns: string[]) {
             }
         };
 
+        // Tworzymy dynamiczne osie (pozwala to na dołożenie prawej osi Y dla Yield)
+        let chartScales: any = {
+            x: { grid: { display: false }, ticks: { color: 'var(--text-secondary)' } },
+            y: yScaleOptions
+        };
+
         const getRowValues = (labelToFind: string) => {
             const row = tableData.find(r => r.label === labelToFind);
             return chartLabels.map(col => row?.values[col] || 0);
         };
 
-        if (currentTab === 'income') {
+        // --- SPECJALNY WIDOK DLA ZAKŁADKI DYWIDEND ---
+        if (currentMainTab === 'dividends') {
+            const dpsData = getRowValues('Dividend per Share');
+            const yieldData = getRowValues('Dividend Yield');
+
+            datasets = [
+                { 
+                    type: 'bar',
+                    label: 'Dividend per Share', 
+                    data: dpsData, 
+                    backgroundColor: '#448AFF', 
+                    borderRadius: 2,
+                    yAxisID: 'y', // Przypisane do lewej osi
+                    order: 2,
+                    categoryPercentage: 0.50, 
+                    barPercentage: 0.95
+                },
+                { 
+                    type: 'line',
+                    label: 'Dividend Yield', 
+                    data: yieldData, 
+                    borderColor: '#FF9100', 
+                    backgroundColor: '#FF9100',
+                    borderWidth: 2,
+                    pointRadius: 4, 
+                    pointBackgroundColor: '#FF9100',
+                    fill: false,
+                    yAxisID: 'yYield', // Przypisane do nowej, prawej osi
+                    order: 1
+                }
+            ];
+
+            // Formatowanie lewej osi Y jako waluty ($)
+            yScaleOptions.ticks.callback = function(value: any) {
+                return '$' + value.toFixed(2);
+            };
+
+            // Dodanie prawej osi Y dla Yield (w procentach)
+            chartScales.yYield = {
+                type: 'linear',
+                display: true,
+                position: 'right',
+                grid: { display: false },
+                ticks: {
+                    color: 'var(--text-secondary)',
+                    callback: function(value: any) {
+                        return value.toFixed(2) + '%';
+                    }
+                }
+            };
+        }
+        else if (currentTab === 'income') {
             datasets = [
                 { label: 'Revenue', data: getRowValues('Revenue'), backgroundColor: '#448AFF', borderRadius: 2 },
                 { label: 'Gross profit', data: getRowValues('Gross profit'), backgroundColor: '#4DD0E1', borderRadius: 2 },
@@ -2323,7 +2400,7 @@ function renderChart(tableData: any[], columns: string[]) {
         }
 
         chartInstance = new Chart(ctx, {
-            type: 'bar',
+            type: 'bar', // Domyślny typ to słupek, ale dataset 'line' nadpisuje to zachowanie u siebie
             data: {
                 labels: chartLabels,
                 datasets: datasets
@@ -2337,15 +2414,19 @@ function renderChart(tableData: any[], columns: string[]) {
                     tooltip: {
                         callbacks: {
                             label: function(context: any) {
+                                // Dodana specjalna logika tooltipów dla zakładki dywidend
+                                if (currentMainTab === 'dividends') {
+                                    if (context.dataset.label === 'Dividend Yield') {
+                                        return context.dataset.label + ': ' + context.parsed.y.toFixed(2) + '%';
+                                    }
+                                    return context.dataset.label + ': $' + context.parsed.y.toFixed(2);
+                                }
                                 return context.dataset.label + ': ' + formatTypedValue(context.parsed.y, 'currency');
                             }
                         }
                     }
                 },
-                scales: {
-                    x: { grid: { display: false } },
-                    y: yScaleOptions
-                }
+                scales: chartScales // Podpinamy wcześniej wygenerowane dynamiczne osie
             }
         });
     }
@@ -2439,6 +2520,78 @@ function formatCurrency(value: number, isEps: boolean = false): string {
     return isNegative ? `(${formatted})` : formatted; // W raportach ujemne liczby często są w nawiasach, ale zostawiam standardowo lub z nawiasami
 }
 
+
+// ==========================================
+// --- NOWE: RENDEROWANIE HISTORII DYWIDEND ---
+// ==========================================
+function renderDividendHistoryTable() {
+    const container = document.getElementById('dividend-table-container');
+    if (!container || !rawDividendsData || rawDividendsData.length === 0) {
+        if (container) container.innerHTML = ''; // Wyczyść jeśli brak danych
+        return;
+    }
+
+    // Dedukcja częstotliwości (Yahoo nie zwraca frequency)
+    const getFrequency = (currentDate: Date, prevDate: Date | null) => {
+        if (!prevDate) return 'Quarterly';
+        const diffDays = Math.abs((currentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays > 300) return 'Annual';
+        if (diffDays > 150) return 'Semi-Annual';
+        if (diffDays > 75) return 'Quarterly';
+        if (diffDays > 20) return 'Monthly';
+        return 'Special';
+    };
+
+    // Sortowanie od najnowszej wypłaty
+    const sortedDivs = [...rawDividendsData].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    let historyHtml = `
+        <div style="margin-top: 32px; padding-bottom: 32px;">
+            <h3 style="margin-bottom: 16px;">Payout History</h3>
+            <div style="overflow-x: auto; border-radius: 6px; border: 1px solid var(--border-color, rgba(150,150,150,0.2));">
+                <table class="tv-table" style="width: 100%; margin-bottom: 0;">
+                    <thead>
+                        <tr>
+                            <th style="text-align: left;">Payment / Ex-Div Date</th>
+                            <th style="text-align: left;">Record Date</th>
+                            <th style="text-align: right;">Amount</th>
+                            <th style="text-align: left; padding-left: 16px;">Frequency</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+    `;
+
+    for (let i = 0; i < sortedDivs.length; i++) {
+        const div = sortedDivs[i];
+        const payDateObj = new Date(div.date);
+        const prevDivDate = sortedDivs[i + 1] ? new Date(sortedDivs[i + 1].date) : null;
+
+        const payDateStr = !isNaN(payDateObj.getTime()) ? payDateObj.toLocaleDateString('pl-PL') : 'Brak';
+        // Brak danych Record Date w historycznym API Yahoo Finance
+        const recDateStr = '<span style="color: #666; font-size: 11px;">Brak danych API</span>';
+        const amount = div.amount != null ? '$' + div.amount.toFixed(4) : 'Brak';
+        const frequency = getFrequency(payDateObj, prevDivDate);
+
+        historyHtml += `
+            <tr class="row-normal">
+                <td style="text-align: left; color: var(--text-primary);">${payDateStr}</td>
+                <td style="text-align: left;">${recDateStr}</td>
+                <td style="font-weight: 600; color: #3CD859; text-align: right;">${amount}</td>
+                <td style="text-align: left; padding-left: 16px; color: var(--text-secondary);">${frequency}</td>
+            </tr>
+        `;
+    }
+
+    historyHtml += `
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+
+    // ZMIANA: Nadpisujemy kontener zamiast dodawać na końcu (rozwiązuje problem mnożenia się tabel)
+    container.innerHTML = historyHtml;
+}
 
 // ==========================================
 // --- NOWE: MODUŁ MAKROEKONOMII ---

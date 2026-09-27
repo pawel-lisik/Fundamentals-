@@ -510,3 +510,23 @@ ipcMain.handle('get-fallback-eps', async (event, ticker: string) => {
     }
     return null;
 });
+
+ipcMain.handle('getDividends', async (event, ticker) => {
+    try {
+        // Używamy metody chart, która zwraca zagnieżdżone eventy
+        const result = await yahooFinance.chart(ticker, { 
+            period1: '2000-01-01' 
+        });
+
+        // YahooFinance zwraca dywidendy w obiekcie result.events.dividends
+        if (result && result.events && result.events.dividends) {
+            // Zamiana słownika na tablicę
+            return Object.values(result.events.dividends); 
+        }
+        
+        return [];
+    } catch (error) {
+        console.error(`Błąd podczas pobierania dywidend dla ${ticker}:`, error);
+        return [];
+    }
+});
