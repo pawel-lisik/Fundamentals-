@@ -22,7 +22,26 @@ interface MetricDef {
 
 const METRICS_MAP: Record<string, MetricDef[]> = {
     income: [
-        { label: 'Revenue', tags: ['Revenues', 'NetRevenues', 'RevenuesNet', 'SalesRevenueNet', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'TotalRevenuesAndOtherIncome', 'SalesRevenueGoodsNet', 'SalesRevenueServicesNet', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'RevenuesNetOfInterestExpense', 'TotalRevenues', 'OperatingRevenues', 'FinancialServicesRevenue', 'InterestAndFeeIncome'], style: 'normal' },
+        { 
+            label: 'Revenue', 
+            tags: [
+                // Standardowe tagi
+                'Revenues', 'NetRevenues', 'RevenuesNet', 'SalesRevenueNet', 
+                'RevenueFromContractWithCustomerExcludingAssessedTax', 'TotalRevenuesAndOtherIncome', 
+                'SalesRevenueGoodsNet', 'SalesRevenueServicesNet', 
+                'RevenueFromContractWithCustomerIncludingAssessedTax', 'RevenuesNetOfInterestExpense', 
+                'TotalRevenues', 'OperatingRevenues', 'FinancialServicesRevenue', 'InterestAndFeeIncome',
+                // --- NOWE TAGI (Opieka zdrowotna, usługi i starsze raporty m.in. DaVita) ---
+                'PatientServiceRevenue', 
+                'HealthCareOrganizationPatientServiceRevenue',
+                'NetPatientServiceRevenue',
+                'PatientServiceRevenueNet',
+                'ServicesRevenue',
+                'ServicesRevenueNet',
+                'RevenuesNetOfProvisionForDoubtfulAccounts'
+            ], 
+            style: 'normal' 
+        },
         { label: 'Cost of revenue', tags: ['CostOfRevenue', 'CostOfGoodsAndServicesSold', 'CostOfGoodsSold'], style: 'normal' },
         { label: 'Gross profit', tags: ['GrossProfit', 'GrossMargin'], style: 'total' }, // Mastercard tego nie raportuje
         { label: 'space1', tags: [], style: 'empty' },
@@ -896,7 +915,8 @@ function renderData() {
                 } else {
                     const sign = val >= 0 ? '+' : '';
                     el.textContent = `${sign}${val.toFixed(2)}%`;
-                    el.style.color = val >= 0 ? '#3CD859' : '#FF5252';
+                    el.style.backgroundColor = val >= 0 ? '#3CD859' : '#FF5252';
+                    el.style.borderRadius = '8px'
                 }
             };
 
@@ -1367,6 +1387,17 @@ function renderData() {
         }, 50);
 
         return; 
+    }
+
+    // --- ZABEZPIECZENIE: SPÓŁKI BEZ DYWIDEND ---
+    if (currentMainTab === 'dividends' && (!rawDividendsData || rawDividendsData.length === 0)) {
+        tableContainer.style.display = 'none';
+        const chartWrapper = document.getElementById('chart-wrapper');
+        if (chartWrapper) chartWrapper.style.display = 'none';
+        
+        // Renderuje komunikat o braku danych
+        renderDividendHistoryTable();
+        return; // Przerywa rysowanie górnego wykresu i głównej tabeli
     }
 
     // Do wyrysowania tabeli i wykresu używamy już nowych, obciętych i odwróconych kolumn
@@ -2521,17 +2552,27 @@ function formatCurrency(value: number, isEps: boolean = false): string {
 }
 
 
+
 // ==========================================
 // --- NOWE: RENDEROWANIE HISTORII DYWIDEND ---
 // ==========================================
 function renderDividendHistoryTable() {
     const container = document.getElementById('dividend-table-container');
-    if (!container || !rawDividendsData || rawDividendsData.length === 0) {
-        if (container) container.innerHTML = ''; // Wyczyść jeśli brak danych
+    if (!container) return;
+
+    // 1. EKRAN "NO DIVIDENDS" JEŚLI BRAK DANYCH
+    if (!rawDividendsData || rawDividendsData.length === 0) {
+        container.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; color: var(--text-secondary);">
+                <i class="fa-solid fa-hand-holding-dollar" style="font-size: 56px; margin-bottom: 16px; opacity: 0.2;"></i>
+                <h2 style="margin: 0 0 8px 0; color: var(--text-primary);">NO DIVIDENDS HISTORY</h2>
+                <p style="margin: 0; font-size: 14px;">Ta spółka nie wypłaca dywidendy lub brakuje danych historycznych.</p>
+            </div>
+        `;
         return;
     }
 
-    // Dedukcja częstotliwości (Yahoo nie zwraca frequency)
+    // 2. JEŚLI SĄ DANE: Tabela
     const getFrequency = (currentDate: Date, prevDate: Date | null) => {
         if (!prevDate) return 'Quarterly';
         const diffDays = Math.abs((currentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -2542,7 +2583,6 @@ function renderDividendHistoryTable() {
         return 'Special';
     };
 
-    // Sortowanie od najnowszej wypłaty
     const sortedDivs = [...rawDividendsData].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     let historyHtml = `
@@ -2552,8 +2592,7 @@ function renderDividendHistoryTable() {
                 <table class="tv-table" style="width: 100%; margin-bottom: 0;">
                     <thead>
                         <tr>
-                            <th style="text-align: left;">Payment / Ex-Div Date</th>
-                            <th style="text-align: left;">Record Date</th>
+                            <th style="text-align: left;">Ex-Dividend Date</th>
                             <th style="text-align: right;">Amount</th>
                             <th style="text-align: left; padding-left: 16px;">Frequency</th>
                         </tr>
@@ -2563,19 +2602,18 @@ function renderDividendHistoryTable() {
 
     for (let i = 0; i < sortedDivs.length; i++) {
         const div = sortedDivs[i];
-        const payDateObj = new Date(div.date);
+        
+        // Ex-Dividend (dokładna data z Yahoo)
+        const exDateObj = new Date(div.date);
         const prevDivDate = sortedDivs[i + 1] ? new Date(sortedDivs[i + 1].date) : null;
+        const exDateStr = !isNaN(exDateObj.getTime()) ? exDateObj.toLocaleDateString('pl-PL') : 'Brak';
 
-        const payDateStr = !isNaN(payDateObj.getTime()) ? payDateObj.toLocaleDateString('pl-PL') : 'Brak';
-        // Brak danych Record Date w historycznym API Yahoo Finance
-        const recDateStr = '<span style="color: #666; font-size: 11px;">Brak danych API</span>';
         const amount = div.amount != null ? '$' + div.amount.toFixed(4) : 'Brak';
-        const frequency = getFrequency(payDateObj, prevDivDate);
+        const frequency = getFrequency(exDateObj, prevDivDate);
 
         historyHtml += `
             <tr class="row-normal">
-                <td style="text-align: left; color: var(--text-primary);">${payDateStr}</td>
-                <td style="text-align: left;">${recDateStr}</td>
+                <td style="text-align: left; color: var(--text-primary);">${exDateStr}</td>
                 <td style="font-weight: 600; color: #3CD859; text-align: right;">${amount}</td>
                 <td style="text-align: left; padding-left: 16px; color: var(--text-secondary);">${frequency}</td>
             </tr>
@@ -2589,7 +2627,6 @@ function renderDividendHistoryTable() {
         </div>
     `;
 
-    // ZMIANA: Nadpisujemy kontener zamiast dodawać na końcu (rozwiązuje problem mnożenia się tabel)
     container.innerHTML = historyHtml;
 }
 
