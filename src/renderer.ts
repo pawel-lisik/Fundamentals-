@@ -38,7 +38,7 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
                 'PatientServiceRevenueNet',
                 'ServicesRevenue',
                 'ServicesRevenueNet',
-                'RevenuesNetOfProvisionForDoubtfulAccounts'
+                'RevenuesNetOfProvisionForDoubtfulAccounts' 
             ], 
             style: 'normal' 
         },
@@ -834,7 +834,7 @@ function renderData() {
                     const diffPercent = ((target - current) / current) * 100;
                     
                     const sign = diffPercent >= 0 ? '+' : '';
-                    const color = diffPercent >= 0 ? '#3CD859' : '#FF5252'; 
+                    const color = diffPercent >= 0 ? 'var(--green)' : 'var(--red)'; 
                     
                     targetPriceEl.innerHTML = `$${target.toFixed(2)} <span style="color: ${color}; font-size: 13px; font-weight: 500; margin-left: 6px;">(${sign}${diffPercent.toFixed(2)}%)</span>`;
                 } else if (currentQuoteInfo.targetPrice) {
@@ -906,17 +906,20 @@ function renderData() {
                 return null;
             };
 
+
             const updateReturnUI = (id: string, val: number | null) => {
                 const el = document.getElementById(id);
                 if (!el) return;
+                
                 if (val === null) {
-                    el.textContent = 'Brak';
-                    el.style.color = 'var(--text-secondary)';
+                    el.textContent = '-';
+                    el.style.cssText = 'background-color: var(--no-return-bg); padding: 6px; border-radius: 8px; color: white; text-align: right; font-size: 10pt';
                 } else {
                     const sign = val >= 0 ? '+' : '';
+                    const bgColor = val >= 0 ? 'var(--green)' : 'var(--red)';
+                    
                     el.textContent = `${sign}${val.toFixed(2)}%`;
-                    el.style.backgroundColor = val >= 0 ? '#3CD859' : '#FF5252';
-                    el.style.borderRadius = '8px'
+                    el.style.cssText = `background-color: ${bgColor}; padding: 6px; border-radius: 8px; color: white; text-align: right; font-size: 10pt`;
                 }
             };
 
