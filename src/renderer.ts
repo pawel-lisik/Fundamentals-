@@ -1659,16 +1659,26 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     const q3ytd = getEffectiveValue(tags, year, true, 'Q3', true); 
                     if (fy !== null && q3ytd !== null) val = fy - q3ytd;
                 }
-            } else {
-                // Income Statement 
+
+                } else {
+                // Income Statement / Dividends
                 if (quarterStr === 'Q4') {
-                    // TUTAJ BYŁ BŁĄD - pobieramy składowe przy pomocy getEffectiveValue!
                     const fy = getEffectiveValue(tags, year, false, null, false);
                     const q1 = getEffectiveValue(tags, year, true, 'Q1', false);
                     const q2 = getEffectiveValue(tags, year, true, 'Q2', false);
                     const q3 = getEffectiveValue(tags, year, true, 'Q3', false);
 
-                    if (fy !== null && q1 !== null && q2 !== null && q3 !== null) {
+                    // NOWE: Sprawdzamy, czy wyliczamy dywidendę
+                    const isDividend = tags.some(t => t.toLowerCase().includes('dividend'));
+
+                    // NOWE: Wymagamy wszystkich kwartałów LUB pozwalamy na braki, jeśli to dywidenda
+                    if (fy !== null && (isDividend || (q1 !== null && q2 !== null && q3 !== null))) {
+                        
+                        // Jeśli to dywidenda i kwartał to null, traktujemy to po prostu jako 0 wypłat w tym okresie
+                        const safeQ1 = q1 || 0;
+                        const safeQ2 = q2 || 0;
+                        const safeQ3 = q3 || 0;
+
                         if (isShares) {
                             const splitFY = splitFactors[`${year} Q4`] || 1.0;
                             const splitQ1 = splitFactors[`${year} Q1`] || 1.0;
@@ -1676,9 +1686,9 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                             const splitQ3 = splitFactors[`${year} Q3`] || 1.0;
 
                             const normFY = fy * splitFY;
-                            const normQ1 = q1 * splitQ1;
-                            const normQ2 = q2 * splitQ2;
-                            const normQ3 = q3 * splitQ3;
+                            const normQ1 = safeQ1 * splitQ1;
+                            const normQ2 = safeQ2 * splitQ2;
+                            const normQ3 = safeQ3 * splitQ3;
 
                             const normQ4 = (4 * normFY) - (normQ1 + normQ2 + normQ3);
                             val = normQ4 / splitFY;
@@ -1689,14 +1699,19 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                             const splitQ3 = splitFactors[`${year} Q3`] || 1.0;
 
                             const normFY = fy / splitFY;
-                            const normQ1 = q1 / splitQ1;
-                            const normQ2 = q2 / splitQ2;
-                            const normQ3 = q3 / splitQ3;
+                            const normQ1 = safeQ1 / splitQ1;
+                            const normQ2 = safeQ2 / splitQ2;
+                            const normQ3 = safeQ3 / splitQ3;
+                            
+                            let normQ4 = normFY - (normQ1 + normQ2 + normQ3);
 
-                            const normQ4 = normFY - (normQ1 + normQ2 + normQ3);
+                            if (isDividend && (normQ4 < 1.2 * normQ3) && (normQ4 > 0.8 * normQ3)) {
+                                normQ4 = normQ3;
+                            }
+
                             val = normQ4 * splitFY;
                         } else {
-                            val = fy - (q1 + q2 + q3);
+                            val = fy - (safeQ1 + safeQ2 + safeQ3);
                         }
                     } else if (isShares && fy !== null) {
                         val = fy; 
@@ -1753,6 +1768,14 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
             
             // 1. Złożone wskaźniki (Wymagające krzyżowych wyliczeń)
             if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Dividend Yield' || def.label.includes('RO') || def.label === 'Current Ratio' || def.label === 'Debt Ratio' || def.label === 'Payout Ratio') {
+                
+                // --- NOWE ZABEZPIECZENIE: Korekta ujemnego Q4 dla dywidend ---
+                let calcDps = extractValue(['CommonStockDividendsPerShareDeclared', 'CommonStockDividendsPerShareCashPaid'], col);
+                if (calcDps !== null && calcDps < 0) {
+                    calcDps = extractValue(['CommonStockDividendsPerShareDeclared', 'CommonStockDividendsPerShareCashPaid'], `${yearStr} Q3`);
+                    if (calcDps !== null && calcDps < 0) calcDps = 0;
+                }
+
                 const calc: any = {
                     netIncome: extractValue(['NetIncomeLoss', 'ProfitLoss'], col),
                     ttmNetIncome: getTTMValue(['NetIncomeLoss', 'ProfitLoss'], i),
@@ -1768,7 +1791,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     ttmOpIncome: getTTMValue(['OperatingIncomeLoss'], i),
                     divPaid: extractValue(['PaymentsOfDividendsCommonStock', 'DividendsCommonStock', 'Dividends'], col),
                     eps: extractValue(['EarningsPerShareDiluted', 'EarningsPerShareBasic'], col), 
-                    dps: extractValue(['CommonStockDividendsPerShareDeclared', 'CommonStockDividendsPerShareCashPaid'], col),
+                    dps: calcDps, // <--- Użycie skorygowanej zmiennej
                     price: getClosestPrice(periodEndDates[col]) 
                 };
 
@@ -1830,11 +1853,19 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     values[col] = (calc.divPaid && calc.netIncome) ? (Math.abs(calc.divPaid) / Math.abs(calc.netIncome)) * 100 : null;
                 }
             }
+            
             // 2. Proste metryki "Na Akcję" (Dzielone przez splitFactor)
-            else if (def.label === 'EPS (Basic)' || def.label === 'Basic' || def.label === 'Diluted' || def.label === 'Dividend per Share') {
-                const rawVal = extractValue(def.tags, col);
-                values[col] = rawVal !== null ? rawVal / splitFactor : null;
-            } 
+                        else if (def.label === 'EPS (Basic)' || def.label === 'Basic' || def.label === 'Diluted' || def.label === 'Dividend per Share') {
+                            let rawVal = extractValue(def.tags, col);
+                            
+                            // --- NOWE ZABEZPIECZENIE: Zastąpienie ujemnej dywidendy wartością z Q3 ---
+                            if (def.label === 'Dividend per Share' && rawVal !== null && rawVal < 0) {
+                                rawVal = extractValue(def.tags, `${yearStr} Q3`);
+                                if (rawVal !== null && rawVal < 0) rawVal = 0; 
+                            }
+                            
+                            values[col] = rawVal !== null ? rawVal / splitFactor : null;
+                        }
             // 2b. Liczba akcji (Mnożona przez splitFactor dla spójności z wyliczonym EPS)
             else if (def.format === 'shares') {
                 const rawVal = extractValue(def.tags, col);
@@ -2362,7 +2393,7 @@ function renderChart(tableData: any[], columns: string[]) {
 
             // Formatowanie lewej osi Y jako waluty ($)
             yScaleOptions.ticks.callback = function(value: any) {
-                return '$' + value.toFixed(2);
+                return '$' + value.toFixed(4);
             };
 
             // Dodanie prawej osi Y dla Yield (w procentach)
@@ -2453,7 +2484,7 @@ function renderChart(tableData: any[], columns: string[]) {
                                     if (context.dataset.label === 'Dividend Yield') {
                                         return context.dataset.label + ': ' + context.parsed.y.toFixed(2) + '%';
                                     }
-                                    return context.dataset.label + ': $' + context.parsed.y.toFixed(2);
+                                    return context.dataset.label + ': $' + context.parsed.y.toFixed(4);
                                 }
                                 return context.dataset.label + ': ' + formatTypedValue(context.parsed.y, 'currency');
                             }
