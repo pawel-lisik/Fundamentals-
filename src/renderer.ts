@@ -274,7 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const macroContainer = document.getElementById('macro-container');
             const earningsContainer = document.getElementById('earnings-container');
             const subTabsContainer = document.getElementById('sub-tabs-container');
-            const periodToggle = document.getElementById('period-toggle');
+            const periodToggle = document.getElementById('period-toggle-btn');
 
             const otherContainers = [
                 document.getElementById('overview-info-container'),
@@ -331,15 +331,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 3. Okresy (Annual, Quarterly)
-    document.querySelectorAll('.toggle-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
-            const target = e.currentTarget as HTMLButtonElement;
-            target.classList.add('active');
-            currentPeriod = target.dataset.period as 'annual' | 'quarterly';
+    const periodToggleBtn = document.getElementById('period-toggle-btn');
+    if (periodToggleBtn) {
+        periodToggleBtn.addEventListener('click', () => {
+            if (currentPeriod === 'annual') {
+                currentPeriod = 'quarterly';
+                periodToggleBtn.innerHTML = '<i class="fa-solid fa-calendar-day" style="color: var(--text-secondary);"></i>';
+            } else {
+                currentPeriod = 'annual';
+                periodToggleBtn.innerHTML = '<i class="fa-solid fa-calendar" style="color: var(--text-secondary);"></i>';
+            }
             if (rawSecData) renderData();
         });
-    });
+    }
 
 // 4. Wyszukiwarka i przycisk obserwowanych
     const tickerInput = document.getElementById('ticker-input') as HTMLInputElement;
@@ -738,7 +742,7 @@ function renderData() {
     const tableContainer = document.getElementById('table-container')!;
     const subTabs = document.getElementById('sub-tabs-container')!;
     const overviewContainer = document.getElementById('overview-info-container')!;
-    const periodToggle = document.getElementById('period-toggle')!;
+    const periodToggle = document.getElementById('period-toggle-btn')!;
     const dividendTableContainer = document.getElementById('dividend-table-container')!;
 
     if (currentMainTab === 'dividends') {
@@ -805,7 +809,7 @@ function renderData() {
             // 3. STOPA DYWIDENDY (Yield)
             const yieldEl = document.getElementById('ov-dividend-yield');
             if (yieldEl) {
-                yieldEl.textContent = currentQuoteInfo.dividendYield != null 
+                yieldEl.textContent = (currentQuoteInfo.dividendYield != null && currentQuoteInfo.dividendYield > 0)
                     ? `${currentQuoteInfo.dividendYield.toFixed(2)}%` 
                     : 'Brak';
             }
@@ -1403,14 +1407,23 @@ function renderData() {
         return; // Przerywa rysowanie górnego wykresu i głównej tabeli
     }
 
-    // Do wyrysowania tabeli i wykresu używamy już nowych, obciętych i odwróconych kolumn
+    // Do wyrysowania tabeli używamy danych zgodnie z wybranym okresem (Annual / Quarterly)
     renderCleanTable(tableData, displayColumns);
 
-    const chartData = (currentMainTab === 'statements' || currentMainTab === 'dividends') 
-            ? tableData 
-            : processSecData(METRICS_MAP.income, columns);
-            
-        renderChart(chartData, displayColumns);
+    let chartDataToRender = (currentMainTab === 'statements' || currentMainTab === 'dividends') 
+        ? tableData 
+        : processSecData(METRICS_MAP.income, columns);
+    let chartColsToRender = displayColumns;
+
+    // --- NOWE: Zawsze kwartalny wykres dla dywidend, nawet jeśli tabela jest w trybie Annual ---
+    if (currentMainTab === 'dividends' && currentPeriod === 'annual') {
+        const qColsAll = getQuarterlyColumns();
+        chartColsToRender = qColsAll.filter(col => parseInt(col.substring(0, 4)) >= 2009).reverse();
+        // Wymuszamy flagę forceQuarterlyLogic = true, aby TTM na wykresie nadal działał kwartalnie
+        chartDataToRender = processSecData(METRICS_MAP.dividends, qColsAll, true);
+    }
+
+    renderChart(chartDataToRender, chartColsToRender);
 
     if (currentMainTab === 'dividends') {
         renderDividendHistoryTable();
@@ -1425,15 +1438,16 @@ function renderData() {
             tableContainerEl.scrollLeft = tableContainerEl.scrollWidth;
         }
         const chartScrollEl = document.getElementById('chart-scroll-area');
-        if (chartScrollEl && currentMainTab === 'statements') {
+        if (chartScrollEl && (currentMainTab === 'statements' || currentMainTab === 'dividends')) {
             chartScrollEl.scrollLeft = chartScrollEl.scrollWidth;
         }
     }, 50);
 }
 
+
 // ZAKTUALIZOWANE OBLICZENIA W processSecData
 // ZAKTUALIZOWANE OBLICZENIA W processSecData
-function processSecData(metricsDef: MetricDef[], columns: string[]) {
+function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarterlyLogic: boolean = false) {
     const result: any[] = [];
     const rawData = rawSecData;
 
@@ -1746,7 +1760,9 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
     };
 
     const getTTMValue = (tags: string[], colIndex: number) => {
-        if (currentPeriod === 'annual') return extractValue(tags, columns[colIndex]);
+        // Jeśli forceQuarterlyLogic jest true, ZAWSZE traktujemy dane jako kwartały i liczymy TTM (suma z 4)
+        if (currentPeriod === 'annual' && !forceQuarterlyLogic) return extractValue(tags, columns[colIndex]);
+        
         let ttmSum = 0;
         for (let i = 0; i < 4; i++) {
             if (!columns[colIndex + i]) return null; 
@@ -1789,9 +1805,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
             const prevCol = columns[i + 1];
             
             // 1. Złożone wskaźniki (Wymagające krzyżowych wyliczeń)
-            if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Dividend Yield' || def.label.includes('RO') || def.label === 'Current Ratio' || def.label === 'Debt Ratio' || def.label === 'Payout Ratio') {
-
-                // USUNIĘTO STARE ZABEZPIECZENIE DLA DYWIDEND (ROBI TO TERAZ EXTRACTVALUE)
+if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Dividend Yield' || def.label.includes('RO') || def.label === 'Current Ratio' || def.label === 'Debt Ratio' || def.label === 'Payout Ratio') {
 
                 const calc: any = {
                     netIncome: extractValue(['NetIncomeLoss', 'ProfitLoss'], col),
@@ -1808,7 +1822,8 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     ttmOpIncome: getTTMValue(['OperatingIncomeLoss'], i),
                     divPaid: extractValue(['PaymentsOfDividendsCommonStock', 'DividendsCommonStock', 'Dividends'], col),
                     eps: extractValue(['EarningsPerShareDiluted', 'EarningsPerShareBasic'], col), 
-                    dps: extractValue(['CommonStockDividendsPerShareDeclared', 'CommonStockDividendsPerShareCashPaid'], col), // POBIERA BEZPOŚREDNIO Z NOWEJ FUNKCJI!
+                    // DPS kwartalny do tabeli wyciągany normalnie
+                    dps: extractValue(['CommonStockDividendsPerShareDeclared', 'CommonStockDividendsPerShareCashPaid'], col), 
                     price: getClosestPrice(periodEndDates[col]) 
                 };
 
@@ -1818,9 +1833,8 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                 }
 
                 if (calc.eps !== null) calc.eps /= splitFactor;
-                // USUNIĘTO calc.dps /= splitFactor; (SPLITY DYWIDEND Z YAHOO ROBIMY NIŻEJ W DRUGIEJ SEKCJI!)
 
-                // --- NOWE: Ręczne, dokładne wyliczanie TTM Diluted EPS dla P/E ---
+                // --- Ręczne wyliczanie TTM Diluted EPS dla P/E ---
                 let ttmEps: number | null = null;
                 if (currentPeriod === 'annual') {
                     ttmEps = calc.eps;
@@ -1833,13 +1847,30 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                         const val = extractValue(['EarningsPerShareDiluted', 'EarningsPerShareBasic'], targetCol);
                         if (val === null) { valid = false; break; }
                         
-                        // POPRAWKA BŁĘDU: Było targetYearStr. Zamieniono na targetCol
                         const targetSplit = splitFactors[targetCol] || 1.0; 
                         sum += (val / targetSplit); 
                     }
                     ttmEps = valid ? sum : null;
                 }
                 calc.ttmEps = ttmEps;
+
+                // --- NOWE: Ręczne wyliczanie TTM DPS dla Dividend Yield ---
+                let ttmDps: number | null = null;
+                if (currentPeriod === 'annual' && !forceQuarterlyLogic) {
+                    ttmDps = calc.dps; // w widoku rocznym dps to po prostu zsumowany roczny yield z Yahoo
+                } else {
+                    let sum = 0;
+                    let valid = true;
+                    for (let j = 0; j < 4; j++) {
+                        const targetCol = columns[i + j];
+                        if (!targetCol) { valid = false; break; }
+                        // Dywidenda z Yahoo jest już odgórnie ze splitami (nie musimy dzielić przez targetSplit)
+                        const val = extractValue(['CommonStockDividendsPerShareDeclared', 'CommonStockDividendsPerShareCashPaid'], targetCol);
+                        if (val === null) { valid = false; break; }
+                        sum += val;
+                    }
+                    ttmDps = valid ? sum : null;
+                }
 
                 // Implementacja wskaźników
                 if (def.label === 'P/E Ratio') {
@@ -1850,7 +1881,8 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                         values[col] = sharesOutstanding !== 0 ? calc.price / (calc.equity / sharesOutstanding) : null;
                     } else values[col] = null;
                 } else if (def.label === 'Dividend Yield') {
-                    values[col] = (calc.price && calc.dps) ? (calc.dps / calc.price) * 100 : null;
+                    // ZMIANA: Wyświetlamy Yield TYLKO wtedy, gdy w analizowanym okresie (np. Q4) faktycznie była dywidenda (calc.dps > 0)
+                    values[col] = (calc.price && ttmDps && ttmDps > 0 && calc.dps && calc.dps > 0) ? (ttmDps / calc.price) * 100 : null;
                 } else if (def.label.includes('ROE')) {
                     const averageEquity = calc.prevEquity ? (calc.equity! + calc.prevEquity) / 2 : calc.equity;
                     values[col] = (calc.ttmNetIncome && averageEquity) ? (calc.ttmNetIncome / averageEquity) * 100 : null;
@@ -1880,7 +1912,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
             // 2b. Dywidendy (Z YAHOO) -> BEZ DZIELENIA, SĄ JUŻ SKORYGOWANE!
             else if (def.label === 'Dividend per Share') {
                 let rawVal = extractValue(def.tags, col);
-                values[col] = rawVal; 
+                values[col] = (rawVal && rawVal > 0) ? rawVal : null; 
             }
             // 2c. Liczba akcji (Mnożona przez splitFactor dla spójności z wyliczonym EPS)
             else if (def.format === 'shares') {
@@ -2110,9 +2142,11 @@ function renderChart(tableData: any[], columns: string[]) {
         innerContainer.appendChild(ctx);
     }
 
-    // Zmiana szerokości w zależności od ilości danych w Statements
-    if (currentMainTab === 'statements') {
-        const pointsFor10Years = currentPeriod === 'quarterly' ? 40 : 10;
+    // Zmiana szerokości w zależności od ilości danych na wykresie
+    if (currentMainTab === 'statements' || currentMainTab === 'dividends') {
+        // columns[0] zawiera "Q", jeśli aktualnie wstrzyknięty wykres jest kwartalny
+        const isQuarterlyChart = columns.length > 0 && columns[0].includes('Q');
+        const pointsFor10Years = isQuarterlyChart ? 40 : 10;
         const widthPercent = Math.max(100, (columns.length / pointsFor10Years) * 100);
         
         innerContainer.style.width = `${widthPercent}%`;
@@ -2372,7 +2406,7 @@ function renderChart(tableData: any[], columns: string[]) {
 
         const getRowValues = (labelToFind: string) => {
             const row = tableData.find(r => r.label === labelToFind);
-            return chartLabels.map(col => row?.values[col] || 0);
+            return chartLabels.map(col => row?.values[col] ?? null);
         };
 
         // --- SPECJALNY WIDOK DLA ZAKŁADKI DYWIDEND ---
@@ -2385,22 +2419,11 @@ function renderChart(tableData: any[], columns: string[]) {
                     type: 'bar',
                     label: 'Dividend per Share', 
                     data: dpsData, 
-                    backgroundColor: (context: any) => {
-                        const index = context.dataIndex;
-                        const label = context.chart.data.labels[index];
-                        if (label && currentPeriod === 'annual') {
-                            const year = parseInt(label.substring(0, 4));
-                            // Jeśli to trwający, nieskończony jeszcze obecny rok (np. 2026), słupek będzie blado niebieski
-                            if (year === currentYear) {
-                                return 'rgba(68, 138, 255, 0.4)'; 
-                            }
-                        }
-                        return '#448AFF'; // Główny, pełny niebieski dla zamkniętych lat
-                    }, 
+                    backgroundColor: '#448AFF', 
                     borderRadius: 2,
-                    yAxisID: 'y', // Przypisane do lewej osi
+                    yAxisID: 'y', 
                     order: 2,
-                    categoryPercentage: 0.50, 
+                    categoryPercentage: 1.0, 
                     barPercentage: 0.95
                 },
                 { 
