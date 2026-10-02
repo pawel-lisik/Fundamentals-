@@ -2567,9 +2567,9 @@ function renderDividendHistoryTable() {
     if (!rawDividendsData || rawDividendsData.length === 0) {
         container.innerHTML = `
             <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; color: var(--text-secondary);">
-                <i class="fa-solid fa-hand-holding-dollar" style="font-size: 56px; margin-bottom: 16px; opacity: 0.2;"></i>
+                <i class="fa-solid fa-percent" style="font-size: 56px; margin-bottom: 16px; opacity: 0.2;"></i>
                 <h2 style="margin: 0 0 8px 0; color: var(--text-primary);">NO DIVIDENDS HISTORY</h2>
-                <p style="margin: 0; font-size: 14px;">Ta spółka nie wypłaca dywidendy lub brakuje danych historycznych.</p>
+                <p style="margin: 0; font-size: 14px;">This company does not pay dividends, or historical data is missing.</p>
             </div>
         `;
         return;
