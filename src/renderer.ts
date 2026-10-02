@@ -1612,22 +1612,62 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
     });
 
     // Główna funkcja ekstrakcji z wbudowaną dedukcją Q4 i Cash Flow
+// Główna funkcja ekstrakcji z wbudowaną dedukcją Q4 i Cash Flow
     const extractValue = (tags: string[], col: string) => {
+        const isDividendTag = tags.some(t => t.toLowerCase().includes('dividend'));
+        const isPerShareTag = tags.some(t => t.toLowerCase().includes('pershare'));
+
+        // 1. DANE Z YAHOO (BEZ INGERENCJI SEC)
+        if (isDividendTag && isPerShareTag && rawDividendsData && rawDividendsData.length > 0) {
+            const isQuarterly = col.includes('Q');
+            const yearStr = parseInt(col.substring(0, 4));
+            
+            let sum = 0;
+            let found = false;
+            
+            for (const div of rawDividendsData) {
+                const dDate = new Date(div.date);
+                const dYear = dDate.getFullYear();
+                
+                if (isQuarterly) {
+                    const quarterStr = col.substring(5, 7);
+                    const month = dDate.getMonth() + 1; // 1-12
+                    let dQuarter = '';
+                    
+                    if (month <= 3) dQuarter = 'Q1';
+                    else if (month <= 6) dQuarter = 'Q2';
+                    else if (month <= 9) dQuarter = 'Q3';
+                    else dQuarter = 'Q4';
+                    
+                    if (dYear === yearStr && dQuarter === quarterStr) {
+                        sum += div.amount;
+                        found = true;
+                    }
+                } else {
+                    if (dYear === yearStr) {
+                        sum += div.amount;
+                        found = true;
+                    }
+                }
+            }
+            return found ? sum : 0; 
+        }
+
+        // 2. DANE Z SEC (Dla całej reszty wskaźników)
         const isQuarterlyMode = col.includes('Q');
         const year = parseInt(col.substring(0, 4));
         const quarterStr = isQuarterlyMode ? col.substring(5, 7) : null;
 
         const isBalance = METRICS_MAP.balance.some(m => m.tags.some(t => tags.includes(t)));
         const isCashFlow = METRICS_MAP.cashflow.some(m => m.tags.some(t => tags.includes(t)));
-        const isPerShare = tags.some(t => t.includes('PerShare')); // <--- Sprawdzamy czy to EPS/DPS
+        const isPerShare = tags.some(t => t.includes('PerShare')); 
         const isShares = tags.some(t => t.toLowerCase().includes('sharesoutstanding'));
 
-        // --- NOWA FUNKCJA POMOCNICZA: Pobiera z SEC, a w razie braku łata dane ze scrapera ---
         const getEffectiveValue = (tgs: string[], y: number, isQ: boolean, qStr: string | null, isCF: boolean) => {
             let v = getRawValue(tgs, y, isQ, qStr, isCF);
+            const isEpsMetric = tgs.some(t => t.toLowerCase().includes('earningspershare'));
             
-            // Aplikowanie danych ze scrapera (np. Visa), jeśli SEC nie ma danych
-            if ((v === null || v === undefined) && isPerShare && currentLoadedTicker === 'V' && fallbackEpsData) {
+            if ((v === null || v === undefined) && isEpsMetric && currentLoadedTicker === 'V' && fallbackEpsData) {
                 const fallbackKey = isQ ? `${y} ${qStr}` : `${y}`;
                 const fallbackRecord = fallbackEpsData[fallbackKey];
                 if (fallbackRecord) {
@@ -1638,12 +1678,10 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
             return v;
         };
 
-        // Zamiast getRawValue, używamy naszego nowego getEffectiveValue
         let val = getEffectiveValue(tags, year, isQuarterlyMode, quarterStr, isCashFlow);
 
         if (isQuarterlyMode && !isBalance) {
             if (isCashFlow) {
-                // Cash Flow z SEC jest w formacie narastającym (YTD).
                 if (quarterStr === 'Q2') {
                     const q1 = getEffectiveValue(tags, year, true, 'Q1', true);
                     const q2ytd = getEffectiveValue(tags, year, true, 'Q2', true); 
@@ -1659,26 +1697,15 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     const q3ytd = getEffectiveValue(tags, year, true, 'Q3', true); 
                     if (fy !== null && q3ytd !== null) val = fy - q3ytd;
                 }
-
-                } else {
-                // Income Statement / Dividends
+            } else {
+                // USUNIĘTO STARE HACKI DLA DYWIDEND. CZYSTY INCOME STATEMENT:
                 if (quarterStr === 'Q4') {
                     const fy = getEffectiveValue(tags, year, false, null, false);
                     const q1 = getEffectiveValue(tags, year, true, 'Q1', false);
                     const q2 = getEffectiveValue(tags, year, true, 'Q2', false);
                     const q3 = getEffectiveValue(tags, year, true, 'Q3', false);
 
-                    // NOWE: Sprawdzamy, czy wyliczamy dywidendę
-                    const isDividend = tags.some(t => t.toLowerCase().includes('dividend'));
-
-                    // NOWE: Wymagamy wszystkich kwartałów LUB pozwalamy na braki, jeśli to dywidenda
-                    if (fy !== null && (isDividend || (q1 !== null && q2 !== null && q3 !== null))) {
-                        
-                        // Jeśli to dywidenda i kwartał to null, traktujemy to po prostu jako 0 wypłat w tym okresie
-                        const safeQ1 = q1 || 0;
-                        const safeQ2 = q2 || 0;
-                        const safeQ3 = q3 || 0;
-
+                    if (fy !== null && q1 !== null && q2 !== null && q3 !== null) {
                         if (isShares) {
                             const splitFY = splitFactors[`${year} Q4`] || 1.0;
                             const splitQ1 = splitFactors[`${year} Q1`] || 1.0;
@@ -1686,9 +1713,9 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                             const splitQ3 = splitFactors[`${year} Q3`] || 1.0;
 
                             const normFY = fy * splitFY;
-                            const normQ1 = safeQ1 * splitQ1;
-                            const normQ2 = safeQ2 * splitQ2;
-                            const normQ3 = safeQ3 * splitQ3;
+                            const normQ1 = q1 * splitQ1;
+                            const normQ2 = q2 * splitQ2;
+                            const normQ3 = q3 * splitQ3;
 
                             const normQ4 = (4 * normFY) - (normQ1 + normQ2 + normQ3);
                             val = normQ4 / splitFY;
@@ -1699,19 +1726,14 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                             const splitQ3 = splitFactors[`${year} Q3`] || 1.0;
 
                             const normFY = fy / splitFY;
-                            const normQ1 = safeQ1 / splitQ1;
-                            const normQ2 = safeQ2 / splitQ2;
-                            const normQ3 = safeQ3 / splitQ3;
+                            const normQ1 = q1 / splitQ1;
+                            const normQ2 = q2 / splitQ2;
+                            const normQ3 = q3 / splitQ3;
                             
                             let normQ4 = normFY - (normQ1 + normQ2 + normQ3);
-
-                            if (isDividend && (normQ4 < 1.2 * normQ3) && (normQ4 > 0.8 * normQ3)) {
-                                normQ4 = normQ3;
-                            }
-
                             val = normQ4 * splitFY;
                         } else {
-                            val = fy - (safeQ1 + safeQ2 + safeQ3);
+                            val = fy - (q1 + q2 + q3);
                         }
                     } else if (isShares && fy !== null) {
                         val = fy; 
@@ -1768,13 +1790,8 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
             
             // 1. Złożone wskaźniki (Wymagające krzyżowych wyliczeń)
             if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Dividend Yield' || def.label.includes('RO') || def.label === 'Current Ratio' || def.label === 'Debt Ratio' || def.label === 'Payout Ratio') {
-                
-                // --- NOWE ZABEZPIECZENIE: Korekta ujemnego Q4 dla dywidend ---
-                let calcDps = extractValue(['CommonStockDividendsPerShareDeclared', 'CommonStockDividendsPerShareCashPaid'], col);
-                if (calcDps !== null && calcDps < 0) {
-                    calcDps = extractValue(['CommonStockDividendsPerShareDeclared', 'CommonStockDividendsPerShareCashPaid'], `${yearStr} Q3`);
-                    if (calcDps !== null && calcDps < 0) calcDps = 0;
-                }
+
+                // USUNIĘTO STARE ZABEZPIECZENIE DLA DYWIDEND (ROBI TO TERAZ EXTRACTVALUE)
 
                 const calc: any = {
                     netIncome: extractValue(['NetIncomeLoss', 'ProfitLoss'], col),
@@ -1791,7 +1808,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                     ttmOpIncome: getTTMValue(['OperatingIncomeLoss'], i),
                     divPaid: extractValue(['PaymentsOfDividendsCommonStock', 'DividendsCommonStock', 'Dividends'], col),
                     eps: extractValue(['EarningsPerShareDiluted', 'EarningsPerShareBasic'], col), 
-                    dps: calcDps, // <--- Użycie skorygowanej zmiennej
+                    dps: extractValue(['CommonStockDividendsPerShareDeclared', 'CommonStockDividendsPerShareCashPaid'], col), // POBIERA BEZPOŚREDNIO Z NOWEJ FUNKCJI!
                     price: getClosestPrice(periodEndDates[col]) 
                 };
 
@@ -1801,7 +1818,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
                 }
 
                 if (calc.eps !== null) calc.eps /= splitFactor;
-                if (calc.dps !== null) calc.dps /= splitFactor;
+                // USUNIĘTO calc.dps /= splitFactor; (SPLITY DYWIDEND Z YAHOO ROBIMY NIŻEJ W DRUGIEJ SEKCJI!)
 
                 // --- NOWE: Ręczne, dokładne wyliczanie TTM Diluted EPS dla P/E ---
                 let ttmEps: number | null = null;
@@ -1855,18 +1872,17 @@ function processSecData(metricsDef: MetricDef[], columns: string[]) {
             }
             
             // 2. Proste metryki "Na Akcję" (Dzielone przez splitFactor)
-                        else if (def.label === 'EPS (Basic)' || def.label === 'Basic' || def.label === 'Diluted' || def.label === 'Dividend per Share') {
-                            let rawVal = extractValue(def.tags, col);
-                            
-                            // --- NOWE ZABEZPIECZENIE: Zastąpienie ujemnej dywidendy wartością z Q3 ---
-                            if (def.label === 'Dividend per Share' && rawVal !== null && rawVal < 0) {
-                                rawVal = extractValue(def.tags, `${yearStr} Q3`);
-                                if (rawVal !== null && rawVal < 0) rawVal = 0; 
-                            }
-                            
-                            values[col] = rawVal !== null ? rawVal / splitFactor : null;
-                        }
-            // 2b. Liczba akcji (Mnożona przez splitFactor dla spójności z wyliczonym EPS)
+
+            else if (def.label === 'EPS (Basic)' || def.label === 'Basic' || def.label === 'Diluted') {
+                let rawVal = extractValue(def.tags, col);
+                values[col] = rawVal !== null ? rawVal / splitFactor : null;
+            }
+            // 2b. Dywidendy (Z YAHOO) -> BEZ DZIELENIA, SĄ JUŻ SKORYGOWANE!
+            else if (def.label === 'Dividend per Share') {
+                let rawVal = extractValue(def.tags, col);
+                values[col] = rawVal; 
+            }
+            // 2c. Liczba akcji (Mnożona przez splitFactor dla spójności z wyliczonym EPS)
             else if (def.format === 'shares') {
                 const rawVal = extractValue(def.tags, col);
                 values[col] = rawVal !== null ? rawVal * splitFactor : null;
@@ -2369,7 +2385,18 @@ function renderChart(tableData: any[], columns: string[]) {
                     type: 'bar',
                     label: 'Dividend per Share', 
                     data: dpsData, 
-                    backgroundColor: '#448AFF', 
+                    backgroundColor: (context: any) => {
+                        const index = context.dataIndex;
+                        const label = context.chart.data.labels[index];
+                        if (label && currentPeriod === 'annual') {
+                            const year = parseInt(label.substring(0, 4));
+                            // Jeśli to trwający, nieskończony jeszcze obecny rok (np. 2026), słupek będzie blado niebieski
+                            if (year === currentYear) {
+                                return 'rgba(68, 138, 255, 0.4)'; 
+                            }
+                        }
+                        return '#448AFF'; // Główny, pełny niebieski dla zamkniętych lat
+                    }, 
                     borderRadius: 2,
                     yAxisID: 'y', // Przypisane do lewej osi
                     order: 2,
