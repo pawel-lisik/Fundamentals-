@@ -1820,7 +1820,7 @@ if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Di
                     prevCurrLiab: prevCol ? extractValue(['LiabilitiesCurrent'], prevCol) : null,
                     opIncome: extractValue(['OperatingIncomeLoss'], col),
                     ttmOpIncome: getTTMValue(['OperatingIncomeLoss'], i),
-                    divPaid: extractValue(['PaymentsOfDividendsCommonStock', 'DividendsCommonStock', 'Dividends'], col),
+                    divPaid: extractValue(['PaymentsOfDividends', 'PaymentsOfDividendsCommonStock', 'DividendsCommonStock', 'Dividends', 'DividendsPaid'], col),
                     eps: extractValue(['EarningsPerShareDiluted', 'EarningsPerShareBasic'], col), 
                     // DPS kwartalny do tabeli wyciągany normalnie
                     dps: extractValue(['CommonStockDividendsPerShareDeclared', 'CommonStockDividendsPerShareCashPaid'], col), 
@@ -1899,7 +1899,18 @@ if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Di
                 } else if (def.label === 'Debt Ratio') {
                     values[col] = (calc.liab && calc.assets) ? (calc.liab / calc.assets) * 100 : null;
                 } else if (def.label === 'Payout Ratio') {
-                    values[col] = (calc.divPaid && calc.netIncome) ? (Math.abs(calc.divPaid) / Math.abs(calc.netIncome)) * 100 : null;
+                    if (calc.divPaid !== null && calc.netIncome !== null && calc.netIncome !== 0) {
+                        // Główna metoda: z raportu Cash Flow (Całkowite wypłacone dywidendy / Zysk netto)
+                        values[col] = (Math.abs(calc.divPaid) / Math.abs(calc.netIncome)) * 100;
+                    } else if (ttmDps !== null && calc.ttmEps !== null && calc.ttmEps !== 0) {
+                        // Fallback 1: Z użyciem wyliczonego wcześniej TTM DPS (od Yahoo) i TTM EPS
+                        values[col] = (ttmDps / Math.abs(calc.ttmEps)) * 100;
+                    } else if (calc.dps !== null && calc.eps !== null && calc.eps !== 0) {
+                        // Fallback 2: Bezpośrednie kwartalne/roczne wartości Per Share
+                        values[col] = (calc.dps / Math.abs(calc.eps)) * 100;
+                    } else {
+                        values[col] = null;
+                    }
                 }
             }
             
@@ -2028,7 +2039,8 @@ function renderCleanTable(data: any[], columns: string[]) {
 
     for (const row of data) {
         if (row.style === 'empty') {
-            html += `<tr class="row-empty"><td colspan="${columns.length + 1}"></td></tr>`;
+            // Oddzielna zamrożona komórka z lewej, utrzymująca ciągłość szarego tła
+            html += `<tr class="row-empty"><td class="sticky-col"></td><td colspan="${columns.length}"></td></tr>`;
             continue;
         }
 

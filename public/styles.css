@@ -1,5 +1,6 @@
 :root {
     --bg-color: rgb(236, 236, 236);
+    --table-bg-secondary: rgb(246, 246, 246 );
     --panel-bg: #dbdbdb;
     --text-primary: #000000;
     --text-secondary: #808080;
@@ -14,6 +15,7 @@
     --red: #FF3B30;
     --no-return-bg: #c7c7c7;
     --toggle-btn-active-bg: #f4f4f4;
+    --table-header-bg: rgba(255, 255, 255, 0.8);
 }
 
 
@@ -239,9 +241,8 @@ h1 { font-size: 20px; margin: 0; }
     flex-grow: 1;
     overflow-x: auto;
     overflow-y: auto;
-    background-color: #ffffff; /* Białe tło raportu */
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
+    background-color: none;
+    border: none;
     padding: 0 0 10px 0; /* Lekki margines górny i dolny dla oddechu */
 }
 
@@ -249,7 +250,7 @@ h1 { font-size: 20px; margin: 0; }
     width: 100%; 
     border-collapse: collapse; 
     white-space: nowrap; 
-    color: #000000; /* Czarny tekst jak w raporcie */
+    color: var(--text-primary);
     font-size: 14px;
 }
 
@@ -262,10 +263,10 @@ h1 { font-size: 20px; margin: 0; }
 
 /* Nagłówki kolumn (lata) */
 .tv-table th { 
-    background-color: #ffffff; 
-    color: #000000; 
+    background-color: var(--table-header-bg); 
+    color: var(--text-primary); 
     font-weight: bold; 
-    border-bottom: 1px solid #000000; /* Pojedyncza linia pod latami */
+    border-bottom: 1px solid var(--border-color); /* Pojedyncza linia pod latami */
     position: sticky; 
     top: 0; 
     z-index: 10; 
@@ -275,25 +276,42 @@ h1 { font-size: 20px; margin: 0; }
 .tv-table .sticky-col { 
     position: sticky; 
     left: 0; 
-    background-color: #ffffff; 
+    background-color: var(--table-header-bg); 
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     text-align: left; 
     font-weight: normal; 
     z-index: 20; 
 }
 
 .tv-table th.sticky-col { 
-    background-color: #ffffff; 
+    background-color: var(--table-header-bg); 
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     z-index: 30; 
-    border-bottom: 1px solid #000000;
+    border-bottom: 1px solid var(--border-color);
 }
 
-/* Subtelny hover */
-.tv-table tr:hover { 
-    background-color: #f7f9fc; 
+/* Naprzemienne kolory wierszy, z pominięciem pustych odstępów między sekcjami */
+.tv-table tbody tr:nth-child(even) {
+    background-color: var(--table-bg-secondary); /* Bardzo delikatny, jasny odcień dopasowany do hovera */
 }
-.tv-table tr:hover .sticky-col { 
-    background-color: #f7f9fc; 
+
+/* Dopasowanie koloru dla zamrożonej lewej kolumny w parzystych wierszach */
+.tv-table tbody tr:nth-child(even) .sticky-col {
+    background-color: white; 
 }
+/* Wymuszenie stałej wysokości dla wszystkich wierszy z danymi */
+.tv-table tr {
+    height: 30px; /* Zmień tę wartość (np. na 40px), aby dopasować do swoich preferencji */
+}
+
+/* Wyrównanie tekstu idealnie na środku w pionie */
+.tv-table td, .tv-table th {
+    vertical-align: middle; 
+}
+
+
 
 /* --- HIERARCHIA RAPORTU KORPORACYJNEGO --- */
 
