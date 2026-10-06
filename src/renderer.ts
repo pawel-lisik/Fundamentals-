@@ -150,40 +150,73 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         { label: 'Total Liabilities & Equity', tags: ['LiabilitiesAndStockholdersEquity'], style: 'total' }
     ],
 
+
     cashflow: [
+        // --- 1. CASH FROM OPERATING ---
+        { label: 'CASH FROM OPERATING', tags: [], style: 'header' },
+        { label: 'Net Income', tags: ['NetIncomeLoss', 'ProfitLoss'], style: 'sub' },
+        { label: 'Depreciation', tags: ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization', 'Depreciation'], style: 'sub' },
+        { label: 'Deferred Tax', tags: ['DeferredIncomeTaxExpenseBenefit', 'DeferredIncomeTaxes'], style: 'sub' },
+        { label: 'Cash From Accounts Receivable', tags: ['IncreaseDecreaseInAccountsReceivable'], style: 'sub' },
+        { label: 'Cash From Inventory', tags: ['IncreaseDecreaseInInventories'], style: 'sub' },
+        { label: 'Cash From Accounts Payable', tags: ['IncreaseDecreaseInAccountsPayable'], style: 'sub' },
         { 
-            label: 'Operating Cash Flow', 
+            label: 'Subtotal (Operating)', 
             tags: [
                 'NetCashProvidedByUsedInOperatingActivities', 
-                'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations' // <-- Alternatywny tag Apple
-            ], 
-            style: 'total' 
-        },
-        { 
-            label: 'Investing Cash Flow', 
-            tags: [
-                'NetCashProvidedByUsedInInvestingActivities', 
-                'NetCashProvidedByUsedInInvestingActivitiesContinuingOperations' // <-- Alternatywny tag Apple
-            ], 
-            style: 'total' 
-        },
-        { 
-            label: 'Financing Cash Flow', 
-            tags: [
-                'NetCashProvidedByUsedInFinancingActivities', 
-                'NetCashProvidedByUsedInFinancingActivitiesContinuingOperations' // <-- Alternatywny tag Apple
+                'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'
             ], 
             style: 'total' 
         },
         { label: 'space1', tags: [], style: 'empty' },
+
+        // --- 2. CASH FROM INVESTING ---
+        { label: 'CASH FROM INVESTING', tags: [], style: 'header' },
         { 
-            label: 'Capital Expenditures', 
+            label: 'Capital Expenditure', 
             tags: [
                 'PaymentsToAcquirePropertyPlantAndEquipment', 
-                'PaymentsToAcquireProductiveAssets' // <-- Specyficzny tag CapEx używany długo przez Apple
+                'PaymentsToAcquireProductiveAssets'
             ], 
-            style: 'normal' 
-        }
+            style: 'sub' 
+        },
+        { 
+            label: 'Subtotal (Investing)', 
+            tags: [
+                'NetCashProvidedByUsedInInvestingActivities', 
+                'NetCashProvidedByUsedInInvestingActivitiesContinuingOperations'
+            ], 
+            style: 'total' 
+        },
+        { label: 'space2', tags: [], style: 'empty' },
+
+        // --- 3. CASH FROM FINANCING ---
+        { label: 'CASH FROM FINANCING', tags: [], style: 'header' },
+        { label: 'Change in Long-Term Debt', tags: ['ProceedsFromRepaymentsOfLongTermDebt', 'ProceedsFromIssuanceOfLongTermDebt', 'RepaymentsOfLongTermDebt'], style: 'sub' },
+        { label: 'Change in Common Equity', tags: ['ProceedsFromIssuanceOfCommonStock', 'PaymentsForRepurchaseOfCommonStock'], style: 'sub' },
+        { label: 'Dividends', tags: ['PaymentsOfDividends', 'PaymentsOfDividendsCommonStock', 'DividendsPaid'], style: 'sub' },
+        { label: 'Change in Revolving Credit Line', tags: ['IncreaseDecreaseInShortTermDebt', 'ProceedsFromRepaymentsOfShortTermDebt'], style: 'sub' },
+        { 
+            label: 'Subtotal (Financing)', 
+            tags: [
+                'NetCashProvidedByUsedInFinancingActivities', 
+                'NetCashProvidedByUsedInFinancingActivitiesContinuingOperations'
+            ], 
+            style: 'total' 
+        },
+        { label: 'space3', tags: [], style: 'empty' },
+
+        // --- 4. CASH BALANCE ---
+        { label: 'CASH BALANCE', tags: [], style: 'header' },
+        { label: 'Beginning of the Year', tags: [], style: 'sub' },
+        { label: 'Increase / (Decrease)', tags: ['CashAndCashEquivalentsPeriodIncreaseDecrease', 'CashPeriodIncreaseDecrease'], style: 'sub' },
+        { label: 'End of the Year', tags: ['CashAndCashEquivalentsAtCarryingValue', 'Cash'], style: 'total' },
+
+        { label: 'space4', tags: [], style: 'empty' },
+        
+        // --- 5. FREE CASH FLOW ---
+        { label: 'FREE CASH FLOW', tags: [], style: 'header' },
+        { label: 'Free Cash Flow', tags: [], style: 'total' }
     ],
 
     indicators: [
@@ -236,22 +269,31 @@ const currentYear = new Date().getFullYear();
 const YEARS_TO_FETCH = 20;
 
 // Funkcja aktualizująca stan przycisku dodawania do obserwowanych
+// Funkcja aktualizująca stan przycisku dodawania do obserwowanych
 function updateWatchlistButtonState() {
     const btn = document.getElementById('add-to-watchlist-btn');
-    if (!btn) return;
-
+    const reportBtn = document.getElementById('open-report-btn');
+    
     if (!currentLoadedTicker) {
-        btn.style.display = 'none';
+        if (btn) btn.style.display = 'none';
+        if (reportBtn) reportBtn.style.display = 'none';
         return;
     }
 
-    // Pokaż przycisk, skoro jakaś spółka jest załadowana
-    btn.style.display = 'block'; 
+    // Jeśli przycisk watchlisty istnieje w DOM, aktualizujemy jego wygląd
+    if (btn) {
+        btn.style.display = 'block'; 
+        
+        if (watchlist.includes(currentLoadedTicker)) {
+            btn.innerHTML = '<i class="fa-solid fa-circle-minus"></i>';
+        } else {
+            btn.innerHTML = '<i class="fa-solid fa-circle-plus"></i>';
+        }
+    }
 
-    if (watchlist.includes(currentLoadedTicker)) {
-        btn.innerHTML = '<i class="fa-solid fa-circle-minus"></i>';
-    } else {
-        btn.innerHTML = '<i class="fa-solid fa-circle-plus"></i>';
+    // Pokazanie przycisku raportu SEC
+    if (reportBtn) {
+        reportBtn.style.display = 'flex';
     }
 }
 
@@ -393,6 +435,43 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('hide-watchlist-btn')?.addEventListener('click', () => {
     // Przełączamy jedną klasę na głównym rodzicu (np. body lub wrapperze)
     document.body.classList.toggle('sidebar-hidden');
+    });
+
+    // --- NOWE: Otwieranie najnowszego raportu SEC ---
+    document.getElementById('open-report-btn')?.addEventListener('click', () => {
+        if (!currentLoadedTicker || !rawSecData) return;
+
+        let latestFiling: any = null;
+        // Przeszukujemy tagi o wysokim prawdopodobieństwie wystąpienia (każdy raport 10-K/10-Q je posiada)
+        const tagsToCheck = ['NetIncomeLoss', 'ProfitLoss', 'Assets'];
+        
+        for (const tag of tagsToCheck) {
+            const units = rawSecData[tag]?.units?.USD;
+            if (units) {
+                for (const item of units) {
+                    // Szukamy tylko raportów kwartalnych i rocznych
+                    if ((item.form === '10-K' || item.form === '10-Q') && item.filed && item.accn) {
+                        if (!latestFiling || new Date(item.filed) > new Date(latestFiling.filed)) {
+                            latestFiling = item;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (latestFiling && latestFiling.accn) {
+            // SEC używa identyfikatora ACCN (np. "0000320193-23-000106").
+            // CIK (ID spółki) to zazwyczaj początek numeru ACCN.
+            const accnNoDashes = latestFiling.accn.replace(/-/g, '');
+            const cik = latestFiling.accn.split('-')[0].replace(/^0+/, ''); // Usuwamy zera wiodące
+            
+            // Generujemy bezpośredni link do strony HTML indeksu danego raportu
+            const url = `https://www.sec.gov/Archives/edgar/data/${cik}/${accnNoDashes}/${latestFiling.accn}-index.html`;
+            window.open(url, '_blank');
+        } else {
+            // Fallback - jeśli aplikacja nie znajdzie ACCN, otworzy profil spółki w EDGAR (gdzie na samej górze leżą raporty)
+            window.open(`https://www.sec.gov/edgar/browse/?CIK=${currentLoadedTicker}`, '_blank');
+        }
     });
 
     // 5. Wygenerowanie listy obserwowanych po załadowaniu okna
@@ -2010,6 +2089,22 @@ if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Di
                     }
                 }
             }
+            // --- NOWY BLOK DLA FREE CASH FLOW ---
+            else if (def.label === 'Free Cash Flow') {
+                // Pobieramy Operating Cash Flow
+                const opCashFlow = extractValue(['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'], col);
+                // Pobieramy CapEx
+                const capEx = extractValue(['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsToAcquireProductiveAssets'], col);
+                
+                if (opCashFlow !== null) {
+                    // W XBRL 'PaymentsToAcquire...' zazwyczaj są dodatnie (jako wydane środki). 
+                    // Dla pełnego bezpieczeństwa odejmujemy ich wartość bezwzględną z przepływów operacyjnych.
+                    const capExValue = capEx !== null ? Math.abs(capEx) : 0;
+                    values[col] = opCashFlow - capExValue;
+                } else {
+                    values[col] = null;
+                }
+            }
             // 7. Standardowe zyski i przychody bazowe
             else {
                 values[col] = extractValue(def.tags, col);
@@ -2488,9 +2583,9 @@ function renderChart(tableData: any[], columns: string[]) {
             ];
         } 
         else if (currentTab === 'cashflow') {
-            const opData = getRowValues('Operating Cash Flow');
-            const invData = getRowValues('Investing Cash Flow');
-            const finData = getRowValues('Financing Cash Flow');
+            const opData = getRowValues('Subtotal (Operating)');
+            const invData = getRowValues('Subtotal (Investing)');
+            const finData = getRowValues('Subtotal (Financing)');
 
             datasets = [
                 { label: 'Operating Cash Flow', data: opData, backgroundColor: '#448AFF', borderRadius: 2 },
@@ -2690,7 +2785,7 @@ function renderDividendHistoryTable() {
                         <tr>
                             <th style="text-align: left;">Ex-Dividend Date</th>
                             <th style="text-align: right;">Amount</th>
-                            <th style="text-align: left; padding-left: 16px;">Frequency</th>
+                            <th style="text-align: right; padding-left: 16px;">Frequency</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2710,8 +2805,8 @@ function renderDividendHistoryTable() {
         historyHtml += `
             <tr class="row-normal">
                 <td style="text-align: left; color: var(--text-primary);">${exDateStr}</td>
-                <td style="font-weight: 600; color: #3CD859; text-align: right;">${amount}</td>
-                <td style="text-align: left; padding-left: 16px; color: var(--text-secondary);">${frequency}</td>
+                <td style="font-weight: 600; color: var(--text-primary); text-align: right;">${amount}</td>
+                <td style="text-align: right; padding-left: 16px; color: var(--text-secondary);">${frequency}</td>
             </tr>
         `;
     }

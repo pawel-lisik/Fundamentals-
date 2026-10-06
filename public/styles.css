@@ -243,6 +243,7 @@ h1 { font-size: 20px; margin: 0; }
     overflow-y: auto;
     background-color: none;
     border: none;
+    border-radius: 10px;
     padding: 0 0 10px 0; /* Lekki margines górny i dolny dla oddechu */
 }
 
@@ -252,6 +253,7 @@ h1 { font-size: 20px; margin: 0; }
     white-space: nowrap; 
     color: var(--text-primary);
     font-size: 14px;
+    border-radius: 10px;
 }
 
 /* Brak pionowych i poziomych linii obramowania dla standardowych komórek */
