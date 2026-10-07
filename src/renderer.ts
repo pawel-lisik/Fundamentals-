@@ -2277,10 +2277,9 @@ function renderChart(tableData: any[], columns: string[]) {
 
     // Zmiana szerokości w zależności od ilości danych na wykresie
     if (currentMainTab === 'statements' || currentMainTab === 'dividends') {
-        // columns[0] zawiera "Q", jeśli aktualnie wstrzyknięty wykres jest kwartalny
-        const isQuarterlyChart = columns.length > 0 && columns[0].includes('Q');
-        const pointsFor10Years = isQuarterlyChart ? 40 : 10;
-        const widthPercent = Math.max(100, (columns.length / pointsFor10Years) * 100);
+        // Wymuszamy 10 widocznych słupków naraz dla OBU trybów (Annual i Quarterly)
+        const visibleItemsCount = 10;
+        const widthPercent = Math.max(100, (columns.length / visibleItemsCount) * 100);
         
         innerContainer.style.width = `${widthPercent}%`;
         scrollArea.style.overflowX = 'auto';
