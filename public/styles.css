@@ -16,6 +16,8 @@
     --no-return-bg: #c7c7c7;
     --toggle-btn-active-bg: #f4f4f4;
     --table-header-bg: rgba(255, 255, 255, 0.8);
+    --table-legend-bg: rgba(249, 249, 249, 0.8);
+    --table-border: #aaaaaa;
 }
 
 
@@ -278,7 +280,7 @@ h1 { font-size: 20px; margin: 0; }
 .tv-table .sticky-col { 
     position: sticky; 
     left: 0; 
-    background-color: var(--table-header-bg); 
+    background-color: var(--table-legend-bg); 
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     text-align: left; 
@@ -287,7 +289,7 @@ h1 { font-size: 20px; margin: 0; }
 }
 
 .tv-table th.sticky-col { 
-    background-color: var(--table-header-bg); 
+    background-color: var(--table-legend-bg); 
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     z-index: 30; 
@@ -301,7 +303,7 @@ h1 { font-size: 20px; margin: 0; }
 
 /* Dopasowanie koloru dla zamrożonej lewej kolumny w parzystych wierszach */
 .tv-table tbody tr:nth-child(even) .sticky-col {
-    background-color: white; 
+    background-color: var(--table-legend-bg); 
 }
 /* Wymuszenie stałej wysokości dla wszystkich wierszy z danymi */
 .tv-table tr {
@@ -328,13 +330,13 @@ h1 { font-size: 20px; margin: 0; }
 /* Nagłówki sekcji (np. Operating expenses) */
 .row-header-text {
     font-weight: normal;
-    color: #000000;
+    color: var(--text-primary);
 }
 
 /* Sub-metryki (np. Research and development) z wcięciem */
 .row-sub {
     padding-left: 36px !important; 
-    color: #333333;
+    color: var(--text-secondary);
 }
 
 /* Wiersze z podsumowaniem (np. Gross profit, Net income) */
@@ -342,7 +344,7 @@ h1 { font-size: 20px; margin: 0; }
     font-weight: bold;
 }
 .row-total td {
-    border-top: 1px solid #000000; /* Czarna linia nad sumą, kluczowy element wizualny ze zrzutu ekranu */
+    border-top: 1px solid var(--table-border); /* Czarna linia nad sumą, kluczowy element wizualny ze zrzutu ekranu */
 }
 
 

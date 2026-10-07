@@ -1243,7 +1243,7 @@ function renderData() {
             <div style="display: flex; flex-direction: column; gap: 32px; margin-top: 10px;">
                 <!-- Sekcja Wycena -->
                 <h3>Valuation</h3>
-                <div style="background: var(--bg-secondary, rgba(150, 150, 150, 0.05)); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color, rgba(150,150,150,0.2));">
+                <div style="padding: 16px;">
                     <div style="display: flex; gap: 8px; margin-bottom: 12px; justify-content: center;">
                         <button class="toggle-btn ${activeValuationChart === 'P/E Ratio' ? 'active' : ''}" onclick="window.switchIndChart('valuation', 'P/E Ratio')">P/E Ratio</button>
                         <button class="toggle-btn ${activeValuationChart === 'P/BV Ratio' ? 'active' : ''}" onclick="window.switchIndChart('valuation', 'P/BV Ratio')">P/BV Ratio</button>
@@ -1256,7 +1256,7 @@ function renderData() {
 
                 <!-- Sekcja Rentowność -->
                 <h3>Profitability</h3>
-                <div style="background: var(--bg-secondary, rgba(150, 150, 150, 0.05)); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color, rgba(150,150,150,0.2));">
+                <div style="padding: 16px;">
                     <div style="display: flex; gap: 8px; margin-bottom: 12px; justify-content: center;">
                         <button class="toggle-btn ${activeProfitChart === 'Return on Equity (ROE)' ? 'active' : ''}" onclick="window.switchIndChart('profit', 'Return on Equity (ROE)')">ROE</button>
                         <button class="toggle-btn ${activeProfitChart === 'Return on Assets (ROA)' ? 'active' : ''}" onclick="window.switchIndChart('profit', 'Return on Assets (ROA)')">ROA</button>
@@ -1270,7 +1270,7 @@ function renderData() {
 
                 <!-- Sekcja Płynność i Zadłużenie -->
                 <h3>Liquidity</h3>
-                <div style="background: var(--bg-secondary, rgba(150, 150, 150, 0.05)); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color, rgba(150,150,150,0.2));">
+                <div style="padding: 16px;">
                     <div style="display: flex; gap: 8px; margin-bottom: 12px; justify-content: center;">
                         <button class="toggle-btn ${activeLiquidChart === 'Current Ratio' ? 'active' : ''}" onclick="window.switchIndChart('liquid', 'Current Ratio')">Current Ratio</button>
                         <button class="toggle-btn ${activeLiquidChart === 'Debt Ratio' ? 'active' : ''}" onclick="window.switchIndChart('liquid', 'Debt Ratio')">Debt Ratio</button>
