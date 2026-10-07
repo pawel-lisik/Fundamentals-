@@ -42,7 +42,16 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
             ], 
             style: 'normal' 
         },
-        { label: 'Cost of revenue', tags: ['CostOfRevenue', 'CostOfGoodsAndServicesSold', 'CostOfGoodsSold'], style: 'normal' },
+        { 
+            label: 'Cost of revenue', 
+            tags: [
+                'CostOfRevenue', 'CostOfGoodsAndServicesSold', 'CostOfGoodsSold', 
+                'CostOfServices', 'CostOfServicesExcludingDepreciationAndAmortization', 'CostOfRevenues',
+                // --- NOWE TAGI: Tagi usługowe / platformowe (normalizacja zbliżona do TradingView) ---
+                'InformationTechnologyExpense', 'PaymentProcessingExpense', 'MerchantFeesExpense', 'DirectOperatingCosts', 'CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization'
+            ], 
+            style: 'normal' 
+        },
         { label: 'Gross profit', tags: ['GrossProfit', 'GrossMargin'], style: 'total' }, // Mastercard tego nie raportuje
         { label: 'space1', tags: [], style: 'empty' },
         { label: 'Operating expenses', tags: [], style: 'header' },
@@ -2019,6 +2028,21 @@ if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Di
                     values[col] = netIncome + taxes + interest + da;
                 } else values[col] = null;
             } 
+
+            // --- NOWA LOGIKA DLA KOSZTÓW I ZYSKU BRUTTO ---
+            else if (def.label === 'Cost of revenue') {
+                const cost = extractValue(def.tags, col);
+                if (cost !== null) {
+                    values[col] = cost;
+                } else {
+                    // Obejście dla firm usługowych/platform (np. Booking od 2020, Mastercard),
+                    // które w ogóle nie raportują kosztów uzyskania przychodu (COGS).
+                    // Jeśli raportują Revenue, uznajemy Cost of revenue = 0.
+                    const revTags = METRICS_MAP.income.find(m => m.label === 'Revenue')?.tags || [];
+                    const rev = extractValue(revTags, col);
+                    values[col] = (rev !== null) ? 0 : null;
+                }
+            }
             else if (def.label === 'Gross profit') {
                 const reportedGross = extractValue(def.tags, col);
                 if (reportedGross !== null) {
@@ -2030,13 +2054,15 @@ if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Di
                     const rev = extractValue(revTags, col);
                     const cost = extractValue(costTags, col);
                     
-                    if (rev !== null && cost !== null) {
-                        values[col] = rev - cost;
+                    // Jeśli mamy Revenue, ale brakuje Cost (wymuszone 0), Gross Profit = Revenue
+                    if (rev !== null) {
+                        values[col] = rev - (cost || 0);
                     } else {
                         values[col] = null;
                     }
                 }
             }
+            // ----------------------------------------------
             // 5. Ręczne wyliczanie "Zysku operacyjnego" dla firm typu Single-Step
             else if (def.label === 'Operating income') {
                 const reportedOpInc = extractValue(def.tags, col);
