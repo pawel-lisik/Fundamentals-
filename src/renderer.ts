@@ -57,7 +57,7 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         { label: 'Operating expenses', tags: [], style: 'header' },
         { label: 'Research and development', tags: ['ResearchAndDevelopmentExpense', 'ResearchAndDevelopmentAndComputerSoftwareExpense'], style: 'sub' },
         { label: 'Sales, general and administrative', tags: ['SellingGeneralAndAdministrativeExpense'], style: 'sub' },
-        { label: 'Total operating expenses', tags: ['OperatingExpenses'], style: 'total' },
+        { label: 'Total operating expenses', tags: ['OperatingExpenses', 'CostsAndExpenses'], style: 'total' },
         { label: 'space2', tags: [], style: 'empty' },
         { label: 'Operating income', tags: ['OperatingIncomeLoss'], style: 'normal' },
         { label: 'Other income, net', tags: ['OtherNonoperatingIncomeExpense'], style: 'normal' },
@@ -67,14 +67,30 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
             label: 'Income before income tax', 
             tags: [
                 'IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest',
-                'IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments', // Stary tag używany przez lata
-                'IncomeBeforeIncomeTaxes', // Standardowy, krótszy tag
-                'IncomeLossFromContinuingOperationsBeforeIncomeTaxesDomesticAndForeign', // Zapasowy tag dla korporacji międzynarodowych
+                'IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments',
+                'IncomeBeforeIncomeTaxes',
+                'IncomeLossFromContinuingOperationsBeforeIncomeTaxesDomesticAndForeign',
                 'IncomeLossFromContinuingOperationsBeforeIncomeTaxes',
+                'IncomeLossFromContinuingOperationsIncludingNoncontrollingInterestBeforeIncomeTaxesExtraordinaryItems',
+                // --- NOWE TAGI (w tym aktualizacje US-GAAP po 2018 r.) ---
+                'IncomeLossBeforeIncomeTaxes',
+                'IncomeLossFromContinuingOperationsBeforeTax',
+                'IncomeLossBeforeIncomeTaxExpenseBenefit',
+                'IncomeBeforeIncomeTaxExpenseBenefit',
+                'ProfitLossBeforeTax',
+                'IncomeLossFromContinuingOperationsBeforeIncomeTaxesAndEquityMethodInvestments'
             ], 
             style: 'normal' 
         },
-        { label: 'Income tax expense', tags: ['IncomeTaxExpenseBenefit'], style: 'normal' },
+        { 
+            label: 'Income tax expense', 
+            tags: [
+                'IncomeTaxExpenseBenefit', 
+                'ProvisionForIncomeTaxes', 
+                'IncomeTaxExpenseBenefitContinuingOperations'
+            ], 
+            style: 'normal' 
+        },
         { label: 'Net income', tags: [
             'NetIncomeLoss',
             'ProfitLoss',
@@ -2075,6 +2091,26 @@ if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Di
                     
                     if (ebt !== null) {
                         values[col] = ebt + interest;
+                    } else {
+                        values[col] = null;
+                    }
+                }
+            }
+            // 5b. Ręczne wyliczanie "Income before income tax" (np. dla Oracle od 2019)
+            else if (def.label === 'Income before income tax') {
+                const reportedEbt = extractValue(def.tags, col);
+                if (reportedEbt !== null) {
+                    values[col] = reportedEbt;
+                } else {
+                    // Jeśli firma używa własnego "extension tag", obliczamy matematycznie: Net Income + Taxes
+                    const netIncomeTags = METRICS_MAP.income.find(m => m.label === 'Net income')?.tags || [];
+                    const taxTags = METRICS_MAP.income.find(m => m.label === 'Income tax expense')?.tags || [];
+                    
+                    const netInc = extractValue(netIncomeTags, col);
+                    const taxes = extractValue(taxTags, col);
+                    
+                    if (netInc !== null) {
+                        values[col] = netInc + (taxes || 0);
                     } else {
                         values[col] = null;
                     }
