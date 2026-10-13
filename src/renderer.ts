@@ -309,7 +309,7 @@ function updateWatchlistButtonState() {
     if (btn) {
         btn.style.display = 'block'; 
         
-        if (watchlist.includes(currentLoadedTicker)) {
+        if (getActiveWatchlist().includes(currentLoadedTicker)) {
             btn.innerHTML = '<i class="fa-solid fa-circle-minus"></i>';
         } else {
             btn.innerHTML = '<i class="fa-solid fa-circle-plus"></i>';
@@ -444,13 +444,15 @@ document.addEventListener('DOMContentLoaded', () => {
     watchlistBtn?.addEventListener('click', () => {
         if (!currentLoadedTicker) return;
 
-        if (watchlist.includes(currentLoadedTicker)) {
+        const activeList = getActiveWatchlist();
+
+        if (activeList.includes(currentLoadedTicker)) {
             // Usuwamy
             removeFromWatchlist(currentLoadedTicker);
         } else {
             // Dodajemy
-            watchlist.push(currentLoadedTicker);
-            localStorage.setItem('myWatchlist', JSON.stringify(watchlist));
+            activeList.push(currentLoadedTicker);
+            saveWatchlists(); // Zapisujemy zaktualizowany słownik
             renderWatchlist();
             updateWatchlistButtonState();
         }
@@ -504,47 +506,271 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-// --- MODUŁ WATCHLISTY ---
+// ==========================================
+// --- MODUŁ WATCHLISTY (WIELE LIST) ---
+// ==========================================
 
-// Odczytywanie zapisanych tickerów z localStorage
-let watchlist: string[] = JSON.parse(localStorage.getItem('myWatchlist') || '["AAPL", "MSFT", "NVDA"]');
+type WatchlistsData = Record<string, string[]>;
 
-// Inicjalizacja listy po uruchomieniu aplikacji
+// Domyślne listy tworzone, gdy wejdziesz w apkę pierwszy raz
+const defaultWatchlists: WatchlistsData = {
+    "Obserwowane": ["AAPL", "MSFT", "NVDA"],
+    "Dywidendowe": ["JNJ", "KO", "PEP", "PG"],
+    "Technologiczne": ["GOOGL", "META", "AMZN", "NFLX"]
+};
+
+// 1. Inicjalizacja i ładowanie słownika list z wbudowaną migracją
+let allWatchlists: WatchlistsData = {};
+
+try {
+    const loaded = localStorage.getItem('myWatchlistsData');
+    if (loaded) {
+        allWatchlists = JSON.parse(loaded);
+    } else {
+        // Jeśli apka uruchomiona pierwszy raz po update, przenieś starą pojedynczą listę
+        const oldWatchlist = localStorage.getItem('myWatchlist');
+        if (oldWatchlist) {
+            allWatchlists["Zaimportowane"] = JSON.parse(oldWatchlist);
+        }
+        // Scal zaimportowane rzeczy z domyślnymi
+        allWatchlists = { ...allWatchlists, ...defaultWatchlists };
+    }
+} catch (e) {
+    allWatchlists = defaultWatchlists;
+}
+
+// 2. Ładowanie aktualnie wybranej (aktywnej) listy (żeby program pamiętał wybór)
+let currentWatchlistName: string = localStorage.getItem('currentWatchlistName') || Object.keys(allWatchlists)[0];
+
+if (!allWatchlists[currentWatchlistName]) {
+    currentWatchlistName = Object.keys(allWatchlists)[0] || "Obserwowane";
+    if (!allWatchlists[currentWatchlistName]) allWatchlists[currentWatchlistName] = [];
+}
+
+function getActiveWatchlist(): string[] {
+    if (!allWatchlists[currentWatchlistName]) {
+        allWatchlists[currentWatchlistName] = [];
+    }
+    return allWatchlists[currentWatchlistName];
+}
+
+function saveWatchlists() {
+    localStorage.setItem('myWatchlistsData', JSON.stringify(allWatchlists));
+    localStorage.setItem('currentWatchlistName', currentWatchlistName);
+}
+
+// Podpinamy logikę wyboru do HTML po załadowaniu
 document.addEventListener('DOMContentLoaded', () => {
+    initWatchlistSelector();
     renderWatchlist();
 });
 
+function initWatchlistSelector() {
+    const dropdownBtn = document.getElementById('watchlist-dropdown-btn');
+    const dropdownMenu = document.getElementById('watchlist-dropdown-menu');
+    const dropdownList = document.getElementById('watchlist-dropdown-list');
+    const currentLabel = document.getElementById('current-watchlist-label');
+    
+    const addBtn = document.getElementById('add-watchlist-btn');
+    const delBtn = document.getElementById('delete-watchlist-btn');
+    
+    // Zmienne obsługujące ukryty formularz dodawania
+    const controlsContainer = document.getElementById('watchlist-controls');
+    const newFormContainer = document.getElementById('new-watchlist-form');
+    const newListNameInput = document.getElementById('new-watchlist-input') as HTMLInputElement;
+    const confirmBtn = document.getElementById('confirm-watchlist-btn');
+    const cancelBtn = document.getElementById('cancel-watchlist-btn');
 
+    if (!dropdownBtn || !dropdownMenu || !dropdownList || !currentLabel) return;
 
-// Usuwanie tickera z listy (wywoływane prawym przyciskiem myszy)
-function removeFromWatchlist(ticker: string) {
-    watchlist = watchlist.filter(t => t !== ticker);
-    localStorage.setItem('myWatchlist', JSON.stringify(watchlist));
-    renderWatchlist();
-    updateWatchlistButtonState(); // DODANE: aktualizacja przycisku!
+    // Funkcja otwierająca/zamykająca nasze menu
+    const toggleDropdown = (forceClose = false) => {
+        if (forceClose || dropdownMenu.style.display === 'flex') {
+            dropdownMenu.style.display = 'none';
+            dropdownBtn.style.backgroundColor = 'transparent';
+        } else {
+            dropdownMenu.style.display = 'flex';
+            dropdownBtn.style.backgroundColor = 'var(--search-bg)';
+        }
+    };
+
+    // Zamykanie menu po kliknięciu gdziekolwiek indziej na ekranie
+    document.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (!controlsContainer?.contains(target)) {
+            toggleDropdown(true);
+        }
+    });
+
+    dropdownBtn.addEventListener('click', () => toggleDropdown());
+
+    // Odświeżanie wnętrza menu (listy opcji)
+    const refreshSelector = () => {
+        dropdownList.innerHTML = '';
+        currentLabel.textContent = currentWatchlistName;
+
+        Object.keys(allWatchlists).forEach(name => {
+            const item = document.createElement('div');
+            const isSelected = name === currentWatchlistName;
+            
+            // Zaznaczenie "ptaszkiem" obecnie aktywnej listy
+            item.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <span>${name}</span>
+                    ${isSelected ? '<i class="fa-solid fa-check" style="color: var(--text-secondary); font-size: 12px;"></i>' : ''}
+                </div>
+            `;
+            
+            // Bezpośrednie style dla elementu listy
+            item.style.padding = '10px 12px';
+            item.style.cursor = 'pointer';
+            item.style.fontSize = '13px';
+            item.style.color = isSelected ? 'var(--text-primary)' : 'var(--text-secondary)';
+            item.style.fontWeight = isSelected ? 'bold' : 'normal';
+            
+            // Efekt hover po najechaniu myszką
+            item.onmouseover = () => { item.style.backgroundColor = 'var(--search-bg)'; };
+            item.onmouseout = () => { item.style.backgroundColor = 'transparent'; };
+
+            // Zmiana listy po kliknięciu
+            item.addEventListener('click', () => {
+                currentWatchlistName = name;
+                saveWatchlists();
+                refreshSelector();
+                renderWatchlist();
+                updateWatchlistButtonState();
+                toggleDropdown(true); // Zamknij menu po kliknięciu
+            });
+
+            dropdownList.appendChild(item);
+        });
+
+        // Hover dla głównego przycisku i przycisków na dole (Dodaj/Usuń)
+        if (dropdownBtn) {
+            dropdownBtn.onmouseover = () => { if (dropdownMenu.style.display !== 'flex') dropdownBtn.style.backgroundColor = 'var(--search-bg)'; };
+            dropdownBtn.onmouseout = () => { if (dropdownMenu.style.display !== 'flex') dropdownBtn.style.backgroundColor = 'transparent'; };
+        }
+        if (addBtn) {
+            addBtn.onmouseover = () => { addBtn.style.backgroundColor = 'var(--search-bg)'; };
+            addBtn.onmouseout = () => { addBtn.style.backgroundColor = 'transparent'; };
+        }
+        if (delBtn) {
+            delBtn.onmouseover = () => { delBtn.style.backgroundColor = 'var(--search-bg)'; };
+            delBtn.onmouseout = () => { delBtn.style.backgroundColor = 'transparent'; };
+        }
+    };
+
+    refreshSelector();
+
+    // --- LOGIKA WBUDOWANEGO FORMULARZA (Dodawanie listy) ---
+    const openAddForm = () => {
+        toggleDropdown(true); // Ukryj menu wyboru
+        if (controlsContainer && newFormContainer && newListNameInput) {
+            controlsContainer.style.display = 'none';
+            newFormContainer.style.display = 'flex';
+            newListNameInput.value = '';
+            newListNameInput.focus();
+        }
+    };
+
+    const closeAddForm = () => {
+        if (controlsContainer && newFormContainer) {
+            newFormContainer.style.display = 'none';
+            controlsContainer.style.display = 'block'; 
+        }
+    };
+
+    const submitNewWatchlist = () => {
+        if (!newListNameInput) return;
+        const newName = newListNameInput.value.trim();
+        
+        if (newName !== '') {
+            if (allWatchlists[newName]) {
+                alert("Lista o tej nazwie już istnieje!");
+                return;
+            }
+            allWatchlists[newName] = [];
+            currentWatchlistName = newName;
+            saveWatchlists();
+            refreshSelector();
+            renderWatchlist();
+            updateWatchlistButtonState();
+            closeAddForm();
+        }
+    };
+
+    addBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openAddForm();
+    });
+    
+    cancelBtn?.addEventListener('click', closeAddForm);
+    confirmBtn?.addEventListener('click', submitNewWatchlist);
+
+    newListNameInput?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') submitNewWatchlist();
+    });
+    newListNameInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeAddForm();
+    });
+
+    // --- LOGIKA USUWANIA LISTY ---
+    delBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDropdown(true); // Najpierw schowaj menu
+        
+        if (Object.keys(allWatchlists).length <= 1) {
+            alert("Nie możesz usunąć ostatniej listy!");
+            return;
+        }
+        if (confirm(`Czy na pewno chcesz usunąć listę "${currentWatchlistName}"?`)) {
+            delete allWatchlists[currentWatchlistName];
+            currentWatchlistName = Object.keys(allWatchlists)[0];
+            saveWatchlists();
+            refreshSelector();
+            renderWatchlist();
+            updateWatchlistButtonState();
+        }
+    });
 }
 
+// Usuwanie tickera z menu kontekstowego lub guzikiem u góry
+function removeFromWatchlist(ticker: string) {
+    allWatchlists[currentWatchlistName] = getActiveWatchlist().filter(t => t !== ticker);
+    saveWatchlists();
+    renderWatchlist();
+    updateWatchlistButtonState();
+}
+
+(window as any).removeFromWatchlist = removeFromWatchlist;
+
+// Renderowanie samych kafelków ze spółkami po prawej stronie
 async function renderWatchlist() {
     const container = document.getElementById('watchlist-container');
     if (!container) return;
 
+    const activeList = getActiveWatchlist();
+
+    if (activeList.length === 0) {
+        container.innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 20px; font-size: 13px;">Ta lista jest pusta.<br><br>Wyszukaj spółkę i dodaj ją przyciskiem (+) z głównego paska.</div>';
+        return;
+    }
+
     let html = '';
 
     try {
-        const quotes = await (window as any).electronAPI.fetchWatchlistQuotes(watchlist);
+        const quotes = await (window as any).electronAPI.fetchWatchlistQuotes(activeList);
         
         for (const quote of quotes) {
             const isPositive = quote.changePercent >= 0;
             const changeClass = isPositive ? 'positive' : 'negative';
             const sign = isPositive ? '+' : '';
             
-            // Ignorujemy zapytania o logo dla par walutowych i indeksów (np. USDPLN=X, ^GSPC)
             const isStock = !quote.ticker.includes('=') && !quote.ticker.includes('^');
             const fallbackText = quote.ticker.length <= 4 ? quote.ticker : quote.ticker.slice(0, 3);
             const formattedPrice = quote.price != null ? quote.price.toFixed(2) : '—';
             const formattedChange = quote.changePercent != null ? quote.changePercent.toFixed(2) : '0.00';
 
-            // Dwuwarstwowy avatar: warstwa 1 (fallback pod spodem), warstwa 2 (logo na białym tle)
             let logoHTML = `
             <div class="wl-logo" style="position: relative; width: 34px; height: 34px; border-radius: 50%; background-color: var(--bg-secondary, #1e222d); border: 1px solid var(--border-color, #2a2e39); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;">
                 <span style="font-weight: 700; font-size: 10px; color: var(--text-secondary, #787b86); position: absolute; z-index: 1; text-transform: uppercase;">
@@ -584,7 +810,7 @@ async function renderWatchlist() {
 
     container.innerHTML = html;
 
-    // Podpięcie zdarzenia kliknięcia po wygenerowaniu DOM
+    // Podpięcie zdarzenia kliknięcia w kafelki po wygenerowaniu DOM
     document.querySelectorAll('.wl-item').forEach(item => {
         item.addEventListener('click', (e) => {
             const currentTarget = e.currentTarget as HTMLElement;
