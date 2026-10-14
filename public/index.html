@@ -11,14 +11,17 @@
 <body>
 
                     <!-- NOWE: Formularz wpisywania nowej nazwy (domyślnie ukryty) -->
-    <div id="new-watchlist-form" style="display: none; z-index: 1000; gap: 6px; margin-bottom: 15px; align-items: center;">
-        <input type="text" id="new-watchlist-input" placeholder="Nazwa listy..." style="flex-grow: 1; width: 50%; padding: 6px; border-radius: 6px; background-color: var(--search-bg); border: 1px solid var(--border-color); color: var(--text-primary); outline: none; font-weight: 500;">
-        <button id="confirm-watchlist-btn" title="Zatwierdź" style="background: var(--search-bg); border: none; border-radius: 6px; color: var(--green); cursor: pointer; padding: 6px 10px;">
-            <i class="fa-solid fa-check"></i>
-        </button>
-        <button id="cancel-watchlist-btn" title="Anuluj" style="background: var(--search-bg); border: none; border-radius: 6px; color: var(--red); cursor: pointer; padding: 6px 10px;">
-            <i class="fa-solid fa-xmark"></i>
-        </button>
+<!-- Modal nakładka z oknem dialogowym na górze -->
+    <div id="new-watchlist-modal" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 2000; justify-content: center; align-items: center;">
+        <div id="new-watchlist-form" style="background: var(--bg-color, #1e222d); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px 18px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); min-width: 320px; display: flex; flex-direction: column; gap: 12px;">
+            <h4 style="align-items: center; margin: 0;">New Watchlist</h4>
+            <small style="color: var(--text-secondary); font-size: 12px; align-items: center;">Enter a name for this watchlist.</small>
+            <input type="text" id="new-watchlist-input" placeholder="Nazwa nowej listy..." style="flex-grow: 1; padding: 8px 12px; border-radius: 6px; background-color: var(--search-bg); border: 1px solid var(--border-color); color: var(--text-primary); outline: none; font-weight: 500; font-size: 13px; align-items: center;">
+            <div style="display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end;">
+                <button id="confirm-watchlist-btn" title="Zatwierdź" style="background: var(--search-bg); border: none; border-radius: 6px; cursor: pointer; padding: 8px 12px; font-size: 14px;">Save</button>
+                <button id="cancel-watchlist-btn" title="Anuluj" style="background: var(--search-bg); border: none; border-radius: 6px; cursor: pointer; padding: 8px 12px; font-size: 14px;">Cancel</button>
+            </div>
+        </div>
     </div>
     <div class="app-container">
         <!-- Lewa strona: Główna zawartość -->
@@ -333,10 +336,10 @@
                 </div>
                                 <!-- Przełącznik list obserwowanych -->
 <!-- Przełącznik list obserwowanych (CUSTOM DROPDOWN) -->
-                <div id="watchlist-controls" style="position: relative; margin-bottom: 15px; width: 100%;">
+                <div id="watchlist-controls" style="position: relative; margin-top: 15px; width: 100%;">
                     
                     <!-- Główny przycisk otwierający menu -->
-                    <div id="watchlist-dropdown-btn" style="width: 100%; padding: 6px; border-radius: 6px; color: var(--text-primary); outline: none; background: none; border: none; font-size: 12pt; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: background-color 0.2s;">
+                    <div id="watchlist-dropdown-btn" style="width: 100%; padding: 6px; color: var(--text-primary); outline: none; background: none; border: none; font-size: 12pt; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
                         <span id="current-watchlist-label">Obserwowane</span>
                         <div style="pointer-events: none; display: flex; flex-direction: column; justify-content: center; font-size: 10px; gap: 0px; color: var(--text-secondary);">
                             <i class="fa-solid fa-chevron-up"></i>
@@ -348,7 +351,7 @@
                     <div id="watchlist-dropdown-menu" style="display: none; position: absolute; top: 100%; left: 0; width: 100%; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.15); flex-direction: column; overflow: hidden; margin-top: 4px;">
                         
                         <!-- Lista list obserwowanych (generowana przez JS) -->
-                        <div id="watchlist-dropdown-list" style="max-height: 200px; overflow-y: auto;">
+                        <div id="watchlist-dropdown-list" style="max-height: 50vh; overflow-y: auto;">
                             <!-- Opcje wygeneruje skrypt -->
                         </div>
 
@@ -357,10 +360,10 @@
 
                         <!-- Przyciski akcji na dole menu -->
                         <div id="add-watchlist-btn" style="padding: 10px 12px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 8px; transition: background 0.2s;">
-                            <i class="fa-solid fa-plus"></i> Utwórz nową listę
+                            <i class="fa-solid fa-plus"></i> New Watchlist
                         </div>
                         <div id="delete-watchlist-btn" style="padding: 10px 12px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--red); display: flex; align-items: center; gap: 8px; transition: background 0.2s;">
-                            <i class="fa-solid fa-trash"></i> Usuń obecną listę
+                            <i class="fa-solid fa-trash"></i> Remove selected Watchlist
                         </div>
                     </div>
                 </div>

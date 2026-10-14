@@ -587,10 +587,8 @@ function initWatchlistSelector() {
     const toggleDropdown = (forceClose = false) => {
         if (forceClose || dropdownMenu.style.display === 'flex') {
             dropdownMenu.style.display = 'none';
-            dropdownBtn.style.backgroundColor = 'transparent';
         } else {
             dropdownMenu.style.display = 'flex';
-            dropdownBtn.style.backgroundColor = 'var(--search-bg)';
         }
     };
 
@@ -644,41 +642,39 @@ function initWatchlistSelector() {
 
             dropdownList.appendChild(item);
         });
-
-        // Hover dla głównego przycisku i przycisków na dole (Dodaj/Usuń)
-        if (dropdownBtn) {
-            dropdownBtn.onmouseover = () => { if (dropdownMenu.style.display !== 'flex') dropdownBtn.style.backgroundColor = 'var(--search-bg)'; };
-            dropdownBtn.onmouseout = () => { if (dropdownMenu.style.display !== 'flex') dropdownBtn.style.backgroundColor = 'transparent'; };
-        }
-        if (addBtn) {
-            addBtn.onmouseover = () => { addBtn.style.backgroundColor = 'var(--search-bg)'; };
-            addBtn.onmouseout = () => { addBtn.style.backgroundColor = 'transparent'; };
-        }
-        if (delBtn) {
-            delBtn.onmouseover = () => { delBtn.style.backgroundColor = 'var(--search-bg)'; };
-            delBtn.onmouseout = () => { delBtn.style.backgroundColor = 'transparent'; };
-        }
     };
 
     refreshSelector();
 
     // --- LOGIKA WBUDOWANEGO FORMULARZA (Dodawanie listy) ---
+    // Zmienne obsługujące formularz
+    const modalContainer = document.getElementById('new-watchlist-modal') || document.getElementById('new-watchlist-form');
+
+
+    // Otwieranie dialogu na górze
     const openAddForm = () => {
-        toggleDropdown(true); // Ukryj menu wyboru
-        if (controlsContainer && newFormContainer && newListNameInput) {
-            controlsContainer.style.display = 'none';
-            newFormContainer.style.display = 'flex';
+        toggleDropdown(true); // Zwiń rozwijane menu watchlisty
+        if (modalContainer && newListNameInput) {
+            modalContainer.style.display = 'flex';
             newListNameInput.value = '';
             newListNameInput.focus();
         }
     };
 
+    // Zamykanie dialogu
     const closeAddForm = () => {
-        if (controlsContainer && newFormContainer) {
-            newFormContainer.style.display = 'none';
-            controlsContainer.style.display = 'block'; 
+        if (modalContainer) {
+            modalContainer.style.display = 'none';
         }
     };
+
+    // Zamykanie kliknięciem w tło (gdy wybrano Opcję 1 z #new-watchlist-modal)
+    const modalBackdrop = document.getElementById('new-watchlist-modal');
+    modalBackdrop?.addEventListener('click', (e) => {
+        if (e.target === modalBackdrop) {
+            closeAddForm();
+        }
+    });
 
     const submitNewWatchlist = () => {
         if (!newListNameInput) return;
