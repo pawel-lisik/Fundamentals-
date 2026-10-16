@@ -141,6 +141,8 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         { label: 'Property, Plant & Equipment (Gross)', tags: ['PropertyPlantAndEquipmentGross'], style: 'sub' },
         { label: 'Accumulated Depreciation', tags: ['AccumulatedDepreciationDepletionAndAmortizationPropertyPlantAndEquipment'], style: 'sub' },
         { label: 'Net Carrying Value (PPE Net)', tags: ['PropertyPlantAndEquipmentNet'], style: 'sub' },
+        { label: 'Goodwill', tags: ['Goodwill'], style: 'sub' },
+        { label: 'Intangible Assets', tags: ['IntangibleAssetsNetExcludingGoodwill'], style: 'sub' },
         { label: 'Total Non-Current Assets', tags: ['AssetsNoncurrent'], style: 'total' },
         { label: 'space2', tags: [], style: 'empty' },
         
@@ -159,7 +161,7 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         { label: 'space4', tags: [], style: 'empty' },
         
         { label: 'Non-Current Liabilities', tags: [], style: 'header' },
-        { label: 'Long-Term Debt', tags: ['LongTermDebtNoncurrent', 'LongTermDebt'], style: 'sub' },
+        { label: 'Long-Term Debt', tags: ['LongTermDebtNoncurrent', 'LongTermDebt', 'LongTermDebtAndCapitalLeaseObligations'], style: 'sub' },
         { label: 'Total Non-Current Liabilities', tags: ['LiabilitiesNoncurrent'], style: 'total' },
         { label: 'space5', tags: [], style: 'empty' },
         
@@ -1771,7 +1773,7 @@ function renderData() {
 }
 
 
-// ZAKTUALIZOWANE OBLICZENIA W processSecData
+
 // ZAKTUALIZOWANE OBLICZENIA W processSecData
 function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarterlyLogic: boolean = false) {
     const result: any[] = [];
@@ -1952,7 +1954,6 @@ function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarter
     });
 
     // Główna funkcja ekstrakcji z wbudowaną dedukcją Q4 i Cash Flow
-// Główna funkcja ekstrakcji z wbudowaną dedukcją Q4 i Cash Flow
     const extractValue = (tags: string[], col: string) => {
         const isDividendTag = tags.some(t => t.toLowerCase().includes('dividend'));
         const isPerShareTag = tags.some(t => t.toLowerCase().includes('pershare'));
@@ -2131,7 +2132,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarter
             const prevCol = columns[i + 1];
             
             // 1. Złożone wskaźniki (Wymagające krzyżowych wyliczeń)
-if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Dividend Yield' || def.label.includes('RO') || def.label === 'Current Ratio' || def.label === 'Debt Ratio' || def.label === 'Payout Ratio') {
+            if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Dividend Yield' || def.label.includes('RO') || def.label === 'Current Ratio' || def.label === 'Debt Ratio' || def.label === 'Payout Ratio') {
 
                 const calc: any = {
                     netIncome: extractValue(['NetIncomeLoss', 'ProfitLoss'], col),
@@ -2301,6 +2302,7 @@ if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Di
                 }
             }
             // ----------------------------------------------
+
             // 5. Ręczne wyliczanie "Zysku operacyjnego" dla firm typu Single-Step
             else if (def.label === 'Operating income') {
                 const reportedOpInc = extractValue(def.tags, col);
@@ -2309,10 +2311,23 @@ if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Di
                 } else {
                     const ebtTags = METRICS_MAP.income.find(m => m.label === 'Income before income tax')?.tags || [];
                     const ebt = extractValue(ebtTags, col);
+                    // Dla banków 'InterestExpense' to główny koszt, dodawanie go tutaj sztucznie pompuje Operating Income
                     const interest = extractValue(['InterestExpense', 'InterestExpenseDebt', 'InterestExpenseNet'], col) || 0;
                     
                     if (ebt !== null) {
-                        values[col] = ebt + interest;
+                        let calculatedOpInc = ebt + interest;
+                        
+                        // ZABEZPIECZENIE: Operating income nigdy nie powinien przekroczyć przychodu (Revenue)
+                        const revTags = METRICS_MAP.income.find(m => m.label === 'Revenue')?.tags || [];
+                        const rev = extractValue(revTags, col);
+                        
+                        if (rev !== null && calculatedOpInc > rev) {
+                            // Jeśli wynik jest absurdalny (jak w bankach w czasie wysokich stóp procentowych),
+                            // zyskiem operacyjnym banku z reguły jest jego zysk przed opodatkowaniem (EBT).
+                            calculatedOpInc = ebt; 
+                        }
+                        
+                        values[col] = calculatedOpInc;
                     } else {
                         values[col] = null;
                     }
@@ -2368,6 +2383,49 @@ if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Di
                     
                     if (assets !== null && equity !== null) {
                         values[col] = assets - equity;
+                    } else {
+                        values[col] = null;
+                    }
+                }
+            }
+            // 7. Total non-current assets
+            else if (def.label === 'Total Non-Current Assets') {
+                const reportedNonCurrent = extractValue(def.tags, col);
+                if (reportedNonCurrent !== null) {
+                    values[col] = reportedNonCurrent;
+                } else {
+                    const currentAssets = extractValue(['AssetsCurrent'], col) || 0;
+                    const totalAssets = extractValue(['Assets'], col);
+                    
+                    if (totalAssets !== null) {
+                        values[col] = totalAssets - currentAssets;
+                    } else {
+                        values[col] = null;
+                    }
+                }
+            }
+            // 7. Total non-current liabilities
+            // 7. Total non-current liabilities
+            else if (def.label === 'Total Non-Current Liabilities') {
+                const reportedNonCurrentLiab = extractValue(def.tags, col);
+                if (reportedNonCurrentLiab !== null) {
+                    values[col] = reportedNonCurrentLiab;
+                } else {
+                    // Prawidłowe tagi XBRL z taksonomii SEC
+                    const currentLiab = extractValue(['LiabilitiesCurrent'], col) || 0;
+                    let totalLiab = extractValue(['Liabilities'], col);
+                    
+                    // Fallback dla Total Liabilities (np. AMZN), gdy brakuje bezpośredniego tagu 'Liabilities'
+                    if (totalLiab === null) {
+                        const assets = extractValue(['Assets', 'LiabilitiesAndStockholdersEquity'], col);
+                        const equity = extractValue(['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'], col);
+                        if (assets !== null && equity !== null) {
+                            totalLiab = assets - equity;
+                        }
+                    }
+                    
+                    if (totalLiab !== null) {
+                        values[col] = totalLiab - currentLiab;
                     } else {
                         values[col] = null;
                     }
