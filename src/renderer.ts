@@ -246,14 +246,10 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         { label: 'Free Cash Flow', tags: [], style: 'total' }
     ],
 
+
     indicators: [
         { label: 'P/E Ratio', tags: [], style: 'normal', format: 'missing_price' },
-        { label: 'P/BV Ratio', tags: [], style: 'normal', format: 'missing_price' },
-        { label: 'Return on Equity (ROE)', tags: [], style: 'normal', format: 'percent' },
-        { label: 'Return on Assets (ROA)', tags: [], style: 'normal', format: 'percent' },
-        { label: 'Return on Invested Capital (ROIC)', tags: [], style: 'normal', format: 'percent' },
-        { label: 'Current Ratio', tags: [], style: 'normal', format: 'ratio' },
-        { label: 'Debt Ratio', tags: [], style: 'normal', format: 'percent' }
+        { label: 'P/BV Ratio', tags: [], style: 'normal', format: 'missing_price' }
     ],
     dividends: [
         { label: 'Dividend per Share', tags: ['CommonStockDividendsPerShareDeclared', 'CommonStockDividendsPerShareCashPaid'], style: 'normal', format: 'decimal' },
@@ -275,13 +271,32 @@ let earningsChartInstance: any = null;
 let rawSecData: any = null;
 let fallbackEpsData: Record<string, any> | null = null;
 
+
+
+
 let indChartValuation: any = null;
 let indChartProfit: any = null;
+let indChartAssetUtil: any = null;
+let indChartLeverage: any = null;
 let indChartLiquid: any = null;
+let indChartGrowth: any = null;
 
 let activeValuationChart = 'P/E Ratio';
-let activeProfitChart = 'Return on Equity (ROE)';
-let activeLiquidChart = 'Current Ratio';
+let activeProfitChart = 'Return on Equity';
+let activeAssetUtilChart = 'Asset Turnover';
+let activeLeverageChart = 'Debt to Equity';
+let activeLiquidChart = 'Current';
+let activeGrowthChart = 'Revenue Growth';
+
+(window as any).switchIndChart = function(section: string, chartName: string) {
+    if (section === 'valuation') activeValuationChart = chartName;
+    if (section === 'profit') activeProfitChart = chartName;
+    if (section === 'assetUtil') activeAssetUtilChart = chartName;
+    if (section === 'leverage') activeLeverageChart = chartName;
+    if (section === 'liquid') activeLiquidChart = chartName;
+    if (section === 'growth') activeGrowthChart = chartName;
+    renderData();
+};
 
 let rawDividendsData: any[] | null = null;
 
@@ -1483,19 +1498,29 @@ function renderData() {
         const chartWrapper = document.getElementById('chart-wrapper');
         if (chartWrapper) chartWrapper.style.display = 'none'; 
 
+        // 1. P/E i P/BV z processSecData
         const valuationRows = tableData.filter(r => ['P/E Ratio', 'P/BV Ratio'].includes(r.label));
-        const profitRows = tableData.filter(r => ['Return on Equity (ROE)', 'Return on Assets (ROA)', 'Return on Invested Capital (ROIC)'].includes(r.label));
-        const liquidRows = tableData.filter(r => ['Current Ratio', 'Debt Ratio'].includes(r.label));
+        
+        // 2. Wszystkie pozostałe wskaźniki z wyodrębnionej funkcji calculateIndicators
+        const calcInd = calculateIndicators(columns);
+
+        const renderChartButtons = (sectionKey: string, activeLabel: string, rows: any[]) => {
+            return rows.map(r => `
+                <button class="toggle-btn ${activeLabel === r.label ? 'active' : ''}" 
+                        onclick="window.switchIndChart('${sectionKey}', '${r.label.replace(/'/g, "\\'")}')">
+                    ${r.label}
+                </button>
+            `).join('');
+        };
 
         tableContainer.style.display = 'block';
         tableContainer.innerHTML = `
             <div style="display: flex; flex-direction: column; gap: 32px; margin-top: 10px;">
-                <!-- Sekcja Wycena -->
+                <!-- Sekcja 0: Wycena (P/E oraz P/BV) -->
                 <h3>Valuation</h3>
                 <div style="padding: 16px;">
-                    <div style="display: flex; gap: 8px; margin-bottom: 12px; justify-content: center;">
-                        <button class="toggle-btn ${activeValuationChart === 'P/E Ratio' ? 'active' : ''}" onclick="window.switchIndChart('valuation', 'P/E Ratio')">P/E Ratio</button>
-                        <button class="toggle-btn ${activeValuationChart === 'P/BV Ratio' ? 'active' : ''}" onclick="window.switchIndChart('valuation', 'P/BV Ratio')">P/BV Ratio</button>
+                    <div style="display: flex; gap: 8px; margin-bottom: 12px; justify-content: center; flex-wrap: wrap;">
+                        ${renderChartButtons('valuation', activeValuationChart, valuationRows)}
                     </div>
                     <div style="height: 450px; width: 100%; position: relative; margin-bottom: 16px;">
                         <canvas id="ind-chart-valuation"></canvas>
@@ -1503,52 +1528,85 @@ function renderData() {
                     ${generateTableHTML(valuationRows, displayColumns)}
                 </div>
 
-                <!-- Sekcja Rentowność -->
-                <h3>Profitability</h3>
+                <!-- Sekcja 1: Profitability and Return Ratios -->
+                <h3>Profitability and Return Ratios</h3>
                 <div style="padding: 16px;">
-                    <div style="display: flex; gap: 8px; margin-bottom: 12px; justify-content: center;">
-                        <button class="toggle-btn ${activeProfitChart === 'Return on Equity (ROE)' ? 'active' : ''}" onclick="window.switchIndChart('profit', 'Return on Equity (ROE)')">ROE</button>
-                        <button class="toggle-btn ${activeProfitChart === 'Return on Assets (ROA)' ? 'active' : ''}" onclick="window.switchIndChart('profit', 'Return on Assets (ROA)')">ROA</button>
-                        <button class="toggle-btn ${activeProfitChart === 'Return on Invested Capital (ROIC)' ? 'active' : ''}" onclick="window.switchIndChart('profit', 'Return on Invested Capital (ROIC)')">ROIC</button>
+                    <div style="display: flex; gap: 8px; margin-bottom: 12px; justify-content: center; flex-wrap: wrap;">
+                        ${renderChartButtons('profit', activeProfitChart, calcInd.profitability)}
                     </div>
                     <div style="height: 250px; width: 100%; position: relative; margin-bottom: 16px;">
                         <canvas id="ind-chart-profit"></canvas>
                     </div>
-                    ${generateTableHTML(profitRows, displayColumns)}
+                    ${generateTableHTML(calcInd.profitability, displayColumns)}
                 </div>
 
-                <!-- Sekcja Płynność i Zadłużenie -->
-                <h3>Liquidity</h3>
+                <!-- Sekcja 2: Asset Utilization Ratios -->
+                <h3>Asset Utilization Ratios</h3>
                 <div style="padding: 16px;">
-                    <div style="display: flex; gap: 8px; margin-bottom: 12px; justify-content: center;">
-                        <button class="toggle-btn ${activeLiquidChart === 'Current Ratio' ? 'active' : ''}" onclick="window.switchIndChart('liquid', 'Current Ratio')">Current Ratio</button>
-                        <button class="toggle-btn ${activeLiquidChart === 'Debt Ratio' ? 'active' : ''}" onclick="window.switchIndChart('liquid', 'Debt Ratio')">Debt Ratio</button>
+                    <div style="display: flex; gap: 8px; margin-bottom: 12px; justify-content: center; flex-wrap: wrap;">
+                        ${renderChartButtons('assetUtil', activeAssetUtilChart, calcInd.assetUtilization)}
+                    </div>
+                    <div style="height: 250px; width: 100%; position: relative; margin-bottom: 16px;">
+                        <canvas id="ind-chart-asset-util"></canvas>
+                    </div>
+                    ${generateTableHTML(calcInd.assetUtilization, displayColumns)}
+                </div>
+
+                <!-- Sekcja 3: Leverage Ratios -->
+                <h3>Leverage Ratios</h3>
+                <div style="padding: 16px;">
+                    <div style="display: flex; gap: 8px; margin-bottom: 12px; justify-content: center; flex-wrap: wrap;">
+                        ${renderChartButtons('leverage', activeLeverageChart, calcInd.leverage)}
+                    </div>
+                    <div style="height: 250px; width: 100%; position: relative; margin-bottom: 16px;">
+                        <canvas id="ind-chart-leverage"></canvas>
+                    </div>
+                    ${generateTableHTML(calcInd.leverage, displayColumns)}
+                </div>
+
+                <!-- Sekcja 4: Liquidity Ratios -->
+                <h3>Liquidity Ratios</h3>
+                <div style="padding: 16px;">
+                    <div style="display: flex; gap: 8px; margin-bottom: 12px; justify-content: center; flex-wrap: wrap;">
+                        ${renderChartButtons('liquid', activeLiquidChart, calcInd.liquidity)}
                     </div>
                     <div style="height: 250px; width: 100%; position: relative; margin-bottom: 16px;">
                         <canvas id="ind-chart-liquid"></canvas>
                     </div>
-                    ${generateTableHTML(liquidRows, displayColumns)}
+                    ${generateTableHTML(calcInd.liquidity, displayColumns)}
                 </div>
-                <h3>Solvency</h3>
+
+                <!-- Sekcja 5: Growth Trends -->
+                <h3>Growth Trends</h3>
+                <div style="padding: 16px;">
+                    <div style="display: flex; gap: 8px; margin-bottom: 12px; justify-content: center; flex-wrap: wrap;">
+                        ${renderChartButtons('growth', activeGrowthChart, calcInd.growth)}
+                    </div>
+                    <div style="height: 250px; width: 100%; position: relative; margin-bottom: 16px;">
+                        <canvas id="ind-chart-growth"></canvas>
+                    </div>
+                    ${generateTableHTML(calcInd.growth, displayColumns)}
+                </div>
+
+                <!-- Sekcja pomocnicza: Other Financial Information (NOPAT, Invested Capital, Net Assets) -->
+                <h3>Other Financial Information</h3>
+                <div style="padding: 16px;">
+                    ${generateTableHTML(calcInd.otherFinancialInfo, displayColumns)}
+                </div>
             </div>
         `;
 
-        // --- 1. WYKRES DLA WYCENY (DZIENNY) ---
+        // --- 1. WYKRES DLA WYCENY (DZIENNY P/E i P/BV - bez zmian) ---
         const ctxValuation = document.getElementById('ind-chart-valuation') as HTMLCanvasElement;
         if (ctxValuation) {
-            if (indChartValuation) {
-                indChartValuation.destroy();
-            }
+            if (indChartValuation) indChartValuation.destroy();
 
             const dailyDataPoints: (number | null)[] = [];
             const dateLabels: string[] = [];
-            
-            // Mapowanie kwartalnych wartości do codziennych cen
             const quarterlyDict: { time: number, value: number }[] = [];
             const qCols = getQuarterlyColumns();
             
             if (activeValuationChart === 'P/E Ratio') {
-                // Dla P/E potrzebujemy TTM EPS (suma 4 kwartałów)
                 const qIncomeData = processSecData(METRICS_MAP.income, qCols);
                 const qDilutedRow = qIncomeData.find(r => r.label === 'Diluted') ?? qIncomeData.find(r => r.label === 'Basic');
 
@@ -1565,7 +1623,6 @@ function renderData() {
                         if (valid) {
                             const col = qCols[i];
                             let targetTime = periodEndDates[col];
-                            
                             if (!targetTime) {
                                 const year = parseInt(col.substring(0, 4));
                                 const q = col.substring(5, 7);
@@ -1575,54 +1632,45 @@ function renderData() {
                                 else if (q === 'Q3') { month = 8; day = 30; }
                                 targetTime = new Date(year, month, day).getTime();
                             }
-                            
-                            const dateNum = targetTime + (45 * 86400000);
-                            quarterlyDict.push({ time: dateNum, value: ttmSum });
+                            quarterlyDict.push({ time: targetTime + (45 * 86400000), value: ttmSum });
                         }
                     }
                 }
             } else if (activeValuationChart === 'P/BV Ratio') {
-                 // Dla P/BV potrzebujemy Book Value per Share (Equity / Shares) na dany kwartał
-                 const qBalanceData = processSecData(METRICS_MAP.balance, qCols);
-                 const qIncomeData = processSecData(METRICS_MAP.income, qCols);
-                 
-                 const equityRow = qBalanceData.find(r => r.label === 'Total Shareholders Equity');
-                 const epsRow = qIncomeData.find(r => r.label === 'Diluted') ?? qIncomeData.find(r => r.label === 'Basic');
-                 const netIncomeRow = qIncomeData.find(r => r.label === 'Net income');
+                const qBalanceData = processSecData(METRICS_MAP.balance, qCols);
+                const qIncomeData = processSecData(METRICS_MAP.income, qCols);
+                const equityRow = qBalanceData.find(r => r.label === 'Total Shareholders Equity');
+                const epsRow = qIncomeData.find(r => r.label === 'Diluted') ?? qIncomeData.find(r => r.label === 'Basic');
+                const netIncomeRow = qIncomeData.find(r => r.label === 'Net income');
 
-                 if (equityRow && epsRow && netIncomeRow) {
-                     for (let i = 0; i < qCols.length; i++) {
-                         const col = qCols[i];
-                         const equity = equityRow.values[col];
-                         const eps = epsRow.values[col];
-                         const netIncome = netIncomeRow.values[col];
-                         
-                         if (equity != null && eps != null && netIncome != null && eps !== 0) {
-                             const sharesOutstanding = netIncome / eps;
-                             if (sharesOutstanding !== 0) {
-                                 const bvps = equity / sharesOutstanding;
-                                 
-                                 let targetTime = periodEndDates[col];
-                                 if (!targetTime) {
-                                     const year = parseInt(col.substring(0, 4));
-                                     const q = col.substring(5, 7);
-                                     let month = 11, day = 31;
-                                     if (q === 'Q1') { month = 2; day = 31; }
-                                     else if (q === 'Q2') { month = 5; day = 30; }
-                                     else if (q === 'Q3') { month = 8; day = 30; }
-                                     targetTime = new Date(year, month, day).getTime();
-                                 }
-                                 
-                                 const dateNum = targetTime + (45 * 86400000);
-                                 quarterlyDict.push({ time: dateNum, value: bvps });
-                             }
-                         }
-                     }
-                 }
+                if (equityRow && epsRow && netIncomeRow) {
+                    for (let i = 0; i < qCols.length; i++) {
+                        const col = qCols[i];
+                        const equity = equityRow.values[col];
+                        const eps = epsRow.values[col];
+                        const netIncome = netIncomeRow.values[col];
+                        if (equity != null && eps != null && netIncome != null && eps !== 0) {
+                            const sharesOutstanding = netIncome / eps;
+                            if (sharesOutstanding !== 0) {
+                                const bvps = equity / sharesOutstanding;
+                                let targetTime = periodEndDates[col];
+                                if (!targetTime) {
+                                    const year = parseInt(col.substring(0, 4));
+                                    const q = col.substring(5, 7);
+                                    let month = 11, day = 31;
+                                    if (q === 'Q1') { month = 2; day = 31; }
+                                    else if (q === 'Q2') { month = 5; day = 30; }
+                                    else if (q === 'Q3') { month = 8; day = 30; }
+                                    targetTime = new Date(year, month, day).getTime();
+                                }
+                                quarterlyDict.push({ time: targetTime + (45 * 86400000), value: bvps });
+                            }
+                        }
+                    }
+                }
             }
 
             quarterlyDict.sort((a, b) => a.time - b.time);
-
             let currentFundamentalValue: number | null = null;
             let valIdx = 0;
 
@@ -1642,11 +1690,7 @@ function renderData() {
 
                     if (currentFundamentalValue && currentFundamentalValue > 0 && price) {
                         const ratio = Number(price) / currentFundamentalValue;
-                        if (ratio > 0 && ratio < 500) {
-                            dailyDataPoints.push(ratio);
-                        } else {
-                            dailyDataPoints.push(null);
-                        }
+                        dailyDataPoints.push(ratio > 0 && ratio < 500 ? ratio : null);
                     } else {
                         dailyDataPoints.push(null);
                     }
@@ -1656,12 +1700,9 @@ function renderData() {
             let averageRatio = 0;
             const validRatios = dailyDataPoints.filter(val => val !== null) as number[];
             if (validRatios.length > 0) {
-                const sumRatio = validRatios.reduce((acc, val) => acc + val, 0);
-                averageRatio = sumRatio / validRatios.length;
+                averageRatio = validRatios.reduce((acc, val) => acc + val, 0) / validRatios.length;
             }
-            
             const averageDataPoints = dailyDataPoints.map(() => averageRatio);
-            
             const rowDef = valuationRows.find(r => r.label === activeValuationChart);
             const isPercent = rowDef?.format === 'percent';
 
@@ -1669,37 +1710,39 @@ function renderData() {
                 type: 'line',
                 data: {
                     labels: dateLabels,
-                    datasets: [{
-                        label: `${activeValuationChart} (Daily)`,
-                        data: dailyDataPoints,
-                        borderColor: '#2962FF',
-                        backgroundColor: 'rgba(41, 98, 255, 0.1)',
-                        borderWidth: 1.5,
-                        pointRadius: 0,
-                        fill: true,
-                        spanGaps: false,
-                    },
-                    {
-                        label: `Średnia (${isPercent ? averageRatio.toFixed(2) + '%' : averageRatio.toFixed(2)})`, 
-                        data: averageDataPoints,
-                        borderColor: 'rgba(255, 82, 82, 0.8)', 
-                        borderWidth: 2,
-                        borderDash: [5, 5], 
-                        pointRadius: 0,
-                        fill: false,
-                    }]
+                    datasets: [
+                        {
+                            label: `${activeValuationChart} (Daily)`,
+                            data: dailyDataPoints,
+                            borderColor: '#2962FF',
+                            backgroundColor: 'rgba(41, 98, 255, 0.1)',
+                            borderWidth: 1.5,
+                            pointRadius: 0,
+                            fill: true,
+                            spanGaps: false,
+                        },
+                        {
+                            label: `Średnia (${isPercent ? averageRatio.toFixed(2) + '%' : averageRatio.toFixed(2)})`,
+                            data: averageDataPoints,
+                            borderColor: 'rgba(255, 82, 82, 0.8)',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            fill: false,
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     interaction: { mode: 'index', intersect: false },
-                    plugins: { 
-                         legend: {
+                    plugins: {
+                        legend: {
                             display: true,
                             position: 'top',
                             labels: { usePointStyle: true, boxWidth: 8, color: 'var(--text-primary)' }
                         }
-                    }, 
+                    },
                     scales: {
                         x: { ticks: { maxTicksLimit: 10, color: 'var(--text-secondary)' }, grid: { display: false } },
                         y: { grid: { color: 'rgba(150, 150, 150, 0.1)' }, ticks: { color: 'var(--text-secondary)' } }
@@ -1708,12 +1751,12 @@ function renderData() {
             });
         }
 
-
-        // --- 2. WYKRES DLA RENTOWNOŚCI (ROCZNY/KWARTALNY) ---
-        indChartProfit = drawIndicatorChart('ind-chart-profit', indChartProfit, activeProfitChart, profitRows, displayColumns, '#00E676');
-        
-        // --- 3. WYKRES DLA PŁYNNOŚCI (ROCZNY/KWARTALNY) ---
-        indChartLiquid = drawIndicatorChart('ind-chart-liquid', indChartLiquid, activeLiquidChart, liquidRows, displayColumns, '#FF9100');
+        // --- WYKRESY DLA WSZYSTKICH 5 SEKCJI WSKAŹNIKÓW ---
+        indChartProfit = drawIndicatorChart('ind-chart-profit', indChartProfit, activeProfitChart, calcInd.profitability, displayColumns, '#00E676');
+        indChartAssetUtil = drawIndicatorChart('ind-chart-asset-util', indChartAssetUtil, activeAssetUtilChart, calcInd.assetUtilization, displayColumns, '#00B0FF');
+        indChartLeverage = drawIndicatorChart('ind-chart-leverage', indChartLeverage, activeLeverageChart, calcInd.leverage, displayColumns, '#B388FF');
+        indChartLiquid = drawIndicatorChart('ind-chart-liquid', indChartLiquid, activeLiquidChart, calcInd.liquidity, displayColumns, '#FF9100');
+        indChartGrowth = drawIndicatorChart('ind-chart-growth', indChartGrowth, activeGrowthChart, calcInd.growth, displayColumns, '#FF5252');
 
         setTimeout(() => {
             document.querySelectorAll('.ind-table-wrapper').forEach(el => {
@@ -1721,7 +1764,7 @@ function renderData() {
             });
         }, 50);
 
-        return; 
+        return;
     }
 
     // --- ZABEZPIECZENIE: SPÓŁKI BEZ DYWIDEND ---
@@ -3474,4 +3517,349 @@ function renderEarnings() {
             });
         }
     }
+}
+
+
+// =====================================================================================
+// WYLICZANIE ratios
+
+interface CalculatedIndicatorsResult {
+    otherFinancialInfo: any[];
+    profitability: any[];
+    assetUtilization: any[];
+    leverage: any[];
+    liquidity: any[];
+    growth: any[];
+    allRows: any[];
+}
+
+function calculateIndicators(columns: string[]): CalculatedIndicatorsResult {
+    // Pobieramy bazowe sprawozdania finansowe (zawierają już wyliczenia Q4 i fallbacki XBRL)
+    const incomeData = processSecData(METRICS_MAP.income, columns);
+    const balanceData = processSecData(METRICS_MAP.balance, columns);
+    const cashflowData = processSecData(METRICS_MAP.cashflow, columns);
+
+    const getVal = (data: any[], label: string, col: string): number | null => {
+        const row = data.find(r => r.label === label);
+        const val = row?.values?.[col];
+        return (val !== undefined && val !== null) ? Number(val) : null;
+    };
+
+    // Pomocniczy ekstraktor dla tagów spoza głównych wierszy tabeli (np. Interest Expense)
+    const extractDirectTag = (tags: string[], col: string): number | null => {
+        const tempDef: MetricDef[] = [{ label: 'temp', tags, style: 'normal' }];
+        const res = processSecData(tempDef, [col]);
+        return res[0]?.values?.[col] ?? null;
+    };
+
+    const safeDiv = (num: number | null, den: number | null, mult: number = 1): number | null => {
+        if (num === null || den === null || den === 0) return null;
+        return (num / den) * mult;
+    };
+
+    const makeRow = (label: string, format: ValueFormat, style: RowStyle = 'normal') => ({
+        label,
+        style,
+        format,
+        values: {} as Record<string, number | null>
+    });
+
+    // =========================================================================
+    // 0. OTHER FINANCIAL INFORMATION (Dane pośrednie z 1. zrzutu)
+    // =========================================================================
+    const rowsOther = {
+        ebit: makeRow('EBIT', 'currency'),
+        effTaxRate: makeRow('Effective Tax Rate', 'percent'),
+        nopat: makeRow('NOPAT', 'currency', 'total'),
+        ibCurrLiab: makeRow('Interest Bearing Current Liabilities', 'currency'),
+        ibLongLiab: makeRow('Interest Bearing Long Term Liabilities', 'currency'),
+        totalIbLiab: makeRow('Total Interest Bearing Liabilities', 'currency', 'total'),
+        cash: makeRow('Cash', 'currency'),
+        netDebt: makeRow('Net Debt', 'currency', 'total'),
+        equity: makeRow('Equity', 'currency'),
+        investedCapital: makeRow('Invested Capital (aka Capital Employed)', 'currency', 'total'),
+        netAssets: makeRow('Net Assets', 'currency', 'total')
+    };
+
+    // =========================================================================
+    // 1. PROFITABILITY AND RETURN RATIOS
+    // =========================================================================
+    const rowsProfit = {
+        roe: makeRow('Return on Equity', 'percent'),
+        roa: makeRow('Return on Assets', 'percent'),
+        rona: makeRow('Return on Net Assets', 'percent'),
+        roic: makeRow('Return on Invested Capital', 'percent'),
+        grossMargin: makeRow('Gross Margin', 'percent'),
+        sgaRev: makeRow('SG&A % of Revenue', 'percent'),
+        otherOpexRev: makeRow('Other Operating Expenses % of Revenue', 'percent'),
+        ebitdaMargin: makeRow('EBITDA Margin', 'percent'),
+        deprRev: makeRow('Depreciation % of Revenue', 'percent'),
+        ebitMargin: makeRow('EBIT Margin', 'percent'),
+        otherNonOpRev: makeRow('Other Non Operating Expense % of Revenue', 'percent'),
+        ebtMargin: makeRow('EBT Margin', 'percent'),
+        taxRev: makeRow('Tax % of Revenue', 'percent'),
+        netMargin: makeRow('Net Profit Margin', 'percent'),
+        effTaxRate: makeRow('Effective Tax Rate', 'percent'),
+        taxBurden: makeRow('Tax Burden', 'percent'),
+        effIntRate: makeRow('Effective Interest Rate', 'percent'),
+        intBurden: makeRow('Interest Burden', 'percent')
+    };
+
+    // =========================================================================
+    // 2. ASSET UTILIZATION RATIOS
+    // =========================================================================
+    const rowsAssetUtil = {
+        assetTurnover: makeRow('Asset Turnover', 'ratio'),
+        ppeTurnover: makeRow('PPE Turnover', 'ratio'),
+        cashTurnover: makeRow('Cash Turnover', 'ratio'),
+        cashDays: makeRow('Cash Days', 'decimal'),
+        arTurnover: makeRow('A/R Turnover', 'ratio'),
+        arDays: makeRow('A/R Days', 'decimal'),
+        invTurnover: makeRow('Inventory Turnover', 'ratio'),
+        invDays: makeRow('Inventory Days', 'decimal'),
+        apTurnover: makeRow('A/P Turnover', 'ratio'),
+        apDays: makeRow('A/P Days', 'decimal'),
+        ccc: makeRow('Cash Conversion Cycle / WC Funding Gap', 'decimal', 'total')
+    };
+
+    // =========================================================================
+    // 3. LEVERAGE RATIOS
+    // =========================================================================
+    const rowsLeverage = {
+        assetToEquity: makeRow('Total Asset to Equity', 'ratio'),
+        liabToEquity: makeRow('Total Liabilities to Equity', 'ratio'),
+        debtToEquity: makeRow('Debt to Equity', 'ratio'),
+        debtToEbitda: makeRow('Debt to EBITDA', 'ratio'),
+        netDebtToEbitda: makeRow('Net Debt to EBITDA', 'ratio')
+    };
+
+    // =========================================================================
+    // 4. LIQUIDITY RATIOS
+    // =========================================================================
+    const rowsLiquidity = {
+        current: makeRow('Current', 'ratio'),
+        quick: makeRow('Quick', 'ratio'),
+        intCoverage: makeRow('Interest Coverage', 'ratio')
+    };
+
+    // =========================================================================
+    // 5. GROWTH TRENDS
+    // =========================================================================
+    const rowsGrowth = {
+        revGrowth: makeRow('Revenue Growth', 'percent'),
+        ebitdaGrowth: makeRow('EBITDA Growth', 'percent'),
+        ebitGrowth: makeRow('EBIT Growth', 'percent'),
+        netIncGrowth: makeRow('Net Income Growth', 'percent'),
+        assetGrowth: makeRow('Total Asset Growth', 'percent'),
+        dol: makeRow('Degree of Operating Leverage', 'ratio'),
+        dfl: makeRow('Degree of Financial Leverage', 'ratio'),
+        dtl: makeRow('Degree of Total Leverage', 'ratio')
+    };
+
+    // Słownik wartości bazowych na potrzeby wyliczeń dynamiki (Growth Trends)
+    const baseMetricsPerCol: Record<string, {
+        revenue: number | null;
+        ebitda: number | null;
+        ebit: number | null;
+        netIncome: number | null;
+        totalAssets: number | null;
+    }> = {};
+
+    columns.forEach((col) => {
+        // --- DANE Z RACHUNKU ZYSKÓW I STRAT (INCOME STATEMENT) ---
+        const revenue = getVal(incomeData, 'Revenue', col);
+        const cogs = getVal(incomeData, 'Cost of revenue', col);
+        const grossProfit = getVal(incomeData, 'Gross profit', col);
+        const rd = getVal(incomeData, 'Research and development', col);
+        const sga = getVal(incomeData, 'Sales, general and administrative', col);
+        const totalOpex = getVal(incomeData, 'Total operating expenses', col);
+        const ebit = getVal(incomeData, 'Operating income', col);
+        const otherNonOp = getVal(incomeData, 'Other income, net', col);
+        const ebt = getVal(incomeData, 'Income before income tax', col);
+        const tax = getVal(incomeData, 'Income tax expense', col);
+        const netIncome = getVal(incomeData, 'Net income', col);
+
+        // --- DANE Z PRZEPŁYWÓW PIENIĘŻNYCH (CASH FLOW) ---
+        const depreciation = getVal(cashflowData, 'Depreciation', col);
+        const ebitdaFromIncome = getVal(incomeData, 'EBITDA', col);
+        // Zgodnie z arkuszem CFI: EBITDA = EBIT + Depreciation (z fallbackiem do wyliczenia z tabeli)
+        const ebitda = (ebit !== null && depreciation !== null) ? (ebit + depreciation) : ebitdaFromIncome;
+
+        // Koszty odsetkowe (Interest Expense)
+        const interestExpenseRaw = extractDirectTag([
+            'InterestExpense',
+            'InterestExpenseDebt',
+            'InterestAndDebtExpense',
+            'InterestExpenseNet'
+        ], col);
+        const interestExpense = interestExpenseRaw !== null ? Math.abs(interestExpenseRaw) : null;
+
+        // Pozostałe koszty operacyjne (Other Operating Expenses)
+        let otherOpex: number | null = rd;
+        if (otherOpex === null && totalOpex !== null && sga !== null) {
+            otherOpex = Math.max(0, totalOpex - sga);
+        }
+
+        // --- DANE Z BILANSU (BALANCE SHEET) ---
+        const cash = getVal(balanceData, 'Cash & Equivalents', col) ?? 0;
+        const ar = getVal(balanceData, 'Accounts Receivable', col);
+        const inventory = getVal(balanceData, 'Inventory', col) ?? 0;
+        const currAssets = getVal(balanceData, 'Total Current Assets', col);
+        const ppeNet = getVal(balanceData, 'Net Carrying Value (PPE Net)', col);
+        const longTermAssets = getVal(balanceData, 'Total Non-Current Assets', col);
+        const totalAssets = getVal(balanceData, 'Total Assets', col);
+
+        const ap = getVal(balanceData, 'Accounts Payable', col);
+        const shortTermDebt = getVal(balanceData, 'Loans / Short-Term Debt', col) ?? 0;
+        const currLiab = getVal(balanceData, 'Total Current Liabilities', col);
+        const longTermDebt = getVal(balanceData, 'Long-Term Debt', col) ?? 0;
+        const totalLiab = getVal(balanceData, 'Total Liabilities', col);
+        const equity = getVal(balanceData, 'Total Shareholders Equity', col);
+
+        // --- 0. WYLICZENIE OTHER FINANCIAL INFORMATION ---
+        const effTaxRateDecimal = safeDiv(tax, ebt, 1); // ułamek np. 0.2581
+        const effTaxRatePercent = effTaxRateDecimal !== null ? effTaxRateDecimal * 100 : null;
+        const nopat = (ebit !== null && effTaxRateDecimal !== null) ? ebit * (1 - effTaxRateDecimal) : null;
+
+        const totalIbLiab = shortTermDebt + longTermDebt;
+        const netDebt = totalIbLiab - cash;
+        const investedCapital = equity !== null ? netDebt + equity : null;
+
+        // Non Interest Bearing Current Liabilities = Current Liabilities - Interest Bearing Current Liabilities
+        const nonIbCurrLiab = currLiab !== null ? (currLiab - shortTermDebt) : null;
+        // Net Assets = Current Assets - Cash + Long Term Assets - Non Interest Bearing Current Liabilities
+        const netAssets = (currAssets !== null && longTermAssets !== null && nonIbCurrLiab !== null)
+            ? (currAssets - cash + longTermAssets - nonIbCurrLiab)
+            : (ppeNet !== null && currAssets !== null && currLiab !== null ? ppeNet + (currAssets - currLiab) : null);
+
+        rowsOther.ebit.values[col] = ebit;
+        rowsOther.effTaxRate.values[col] = effTaxRatePercent;
+        rowsOther.nopat.values[col] = nopat;
+        rowsOther.ibCurrLiab.values[col] = shortTermDebt;
+        rowsOther.ibLongLiab.values[col] = longTermDebt;
+        rowsOther.totalIbLiab.values[col] = totalIbLiab;
+        rowsOther.cash.values[col] = cash;
+        rowsOther.netDebt.values[col] = netDebt;
+        rowsOther.equity.values[col] = equity;
+        rowsOther.investedCapital.values[col] = investedCapital;
+        rowsOther.netAssets.values[col] = netAssets;
+
+        // --- 1. WYLICZENIE PROFITABILITY AND RETURN RATIOS ---
+        rowsProfit.roe.values[col] = safeDiv(netIncome, equity, 100);
+        rowsProfit.roa.values[col] = safeDiv(netIncome, totalAssets, 100);
+        rowsProfit.rona.values[col] = safeDiv(netIncome, netAssets, 100);
+        rowsProfit.roic.values[col] = safeDiv(nopat, investedCapital, 100);
+        rowsProfit.grossMargin.values[col] = safeDiv(grossProfit, revenue, 100);
+        rowsProfit.sgaRev.values[col] = safeDiv(sga, revenue, 100);
+        rowsProfit.otherOpexRev.values[col] = safeDiv(otherOpex, revenue, 100);
+        rowsProfit.ebitdaMargin.values[col] = safeDiv(ebitda, revenue, 100);
+        rowsProfit.deprRev.values[col] = safeDiv(depreciation, revenue, 100);
+        rowsProfit.ebitMargin.values[col] = safeDiv(ebit, revenue, 100);
+        rowsProfit.otherNonOpRev.values[col] = safeDiv(otherNonOp !== null ? Math.abs(otherNonOp) : null, revenue, 100);
+        rowsProfit.ebtMargin.values[col] = safeDiv(ebt, revenue, 100);
+        rowsProfit.taxRev.values[col] = safeDiv(tax, revenue, 100);
+        rowsProfit.netMargin.values[col] = safeDiv(netIncome, revenue, 100);
+        rowsProfit.effTaxRate.values[col] = effTaxRatePercent;
+        rowsProfit.taxBurden.values[col] = safeDiv(netIncome, ebt, 100);
+        rowsProfit.effIntRate.values[col] = safeDiv(interestExpense, totalIbLiab, 100);
+        rowsProfit.intBurden.values[col] = safeDiv(ebt, ebit, 100);
+
+        // --- 2. WYLICZENIE ASSET UTILIZATION RATIOS ---
+        const cashDaysVal = safeDiv(cash * 365, revenue, 1);
+        const arDaysVal = ar !== null ? safeDiv(ar * 365, revenue, 1) : null;
+        const invDaysVal = safeDiv(inventory * 365, cogs, 1);
+        const apDaysVal = ap !== null ? safeDiv(ap * 365, cogs, 1) : null;
+
+        rowsAssetUtil.assetTurnover.values[col] = safeDiv(revenue, totalAssets, 1);
+        rowsAssetUtil.ppeTurnover.values[col] = safeDiv(revenue, ppeNet, 1);
+        rowsAssetUtil.cashTurnover.values[col] = safeDiv(revenue, cash, 1);
+        rowsAssetUtil.cashDays.values[col] = cashDaysVal;
+        rowsAssetUtil.arTurnover.values[col] = safeDiv(revenue, ar, 1);
+        rowsAssetUtil.arDays.values[col] = arDaysVal;
+        rowsAssetUtil.invTurnover.values[col] = safeDiv(cogs, inventory, 1);
+        rowsAssetUtil.invDays.values[col] = invDaysVal;
+        rowsAssetUtil.apTurnover.values[col] = safeDiv(cogs, ap, 1);
+        rowsAssetUtil.apDays.values[col] = apDaysVal;
+        rowsAssetUtil.ccc.values[col] = (arDaysVal !== null && invDaysVal !== null && apDaysVal !== null)
+            ? (arDaysVal + invDaysVal - apDaysVal)
+            : null;
+
+        // --- 3. WYLICZENIE LEVERAGE RATIOS ---
+        rowsLeverage.assetToEquity.values[col] = safeDiv(totalAssets, equity, 1);
+        rowsLeverage.liabToEquity.values[col] = safeDiv(totalLiab, equity, 1);
+        rowsLeverage.debtToEquity.values[col] = safeDiv(totalIbLiab, equity, 1);
+        rowsLeverage.debtToEbitda.values[col] = safeDiv(totalIbLiab, ebitda, 1);
+        rowsLeverage.netDebtToEbitda.values[col] = safeDiv(netDebt, ebitda, 1);
+
+        // --- 4. WYLICZENIE LIQUIDITY RATIOS ---
+        rowsLiquidity.current.values[col] = safeDiv(currAssets, currLiab, 1);
+        rowsLiquidity.quick.values[col] = currAssets !== null ? safeDiv(currAssets - inventory, currLiab, 1) : null;
+        rowsLiquidity.intCoverage.values[col] = safeDiv(ebitda, interestExpense, 1);
+
+        // Zapis danych bazowych dla wyliczenia Growth Trends w kolejnym kroku
+        baseMetricsPerCol[col] = {
+            revenue,
+            ebitda,
+            ebit,
+            netIncome,
+            totalAssets
+        };
+    });
+
+    // --- 5. WYLICZENIE GROWTH TRENDS ---
+    // Uwaga: columns są uporządkowane od najnowszego do najstarszego, więc okres poprzedni to columns[i + 1]
+    columns.forEach((col, i) => {
+        const prevCol = columns[i + 1];
+        if (!prevCol || !baseMetricsPerCol[prevCol]) {
+            Object.values(rowsGrowth).forEach(r => { r.values[col] = null; });
+            return;
+        }
+
+        const curr = baseMetricsPerCol[col];
+        const prev = baseMetricsPerCol[prevCol];
+
+        const calcPctChange = (cVal: number | null, pVal: number | null): number | null => {
+            if (cVal === null || pVal === null || pVal === 0) return null;
+            return ((cVal - pVal) / Math.abs(pVal)) * 100;
+        };
+
+        const revG = calcPctChange(curr.revenue, prev.revenue);
+        const ebitdaG = calcPctChange(curr.ebitda, prev.ebitda);
+        const ebitG = calcPctChange(curr.ebit, prev.ebit);
+        const netIncG = calcPctChange(curr.netIncome, prev.netIncome);
+        const assetG = calcPctChange(curr.totalAssets, prev.totalAssets);
+
+        rowsGrowth.revGrowth.values[col] = revG;
+        rowsGrowth.ebitdaGrowth.values[col] = ebitdaG;
+        rowsGrowth.ebitGrowth.values[col] = ebitG;
+        rowsGrowth.netIncGrowth.values[col] = netIncG;
+        rowsGrowth.assetGrowth.values[col] = assetG;
+
+        rowsGrowth.dol.values[col] = safeDiv(ebitG, revG, 1);
+        rowsGrowth.dfl.values[col] = safeDiv(netIncG, ebitG, 1);
+        rowsGrowth.dtl.values[col] = safeDiv(netIncG, revG, 1);
+    });
+
+    const otherFinancialInfo = Object.values(rowsOther);
+    const profitability = Object.values(rowsProfit);
+    const assetUtilization = Object.values(rowsAssetUtil);
+    const leverage = Object.values(rowsLeverage);
+    const liquidity = Object.values(rowsLiquidity);
+    const growth = Object.values(rowsGrowth);
+
+    return {
+        otherFinancialInfo,
+        profitability,
+        assetUtilization,
+        leverage,
+        liquidity,
+        growth,
+        allRows: [
+            ...profitability,
+            ...assetUtilization,
+            ...leverage,
+            ...liquidity,
+            ...growth
+        ]
+    };
 }
