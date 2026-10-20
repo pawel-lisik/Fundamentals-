@@ -2320,12 +2320,10 @@ function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarter
             }
             // 3. Ręczne wyliczenie EBITDA
             else if (def.label === 'EBITDA') {
-                const netIncome = extractValue(['NetIncomeLoss', 'ProfitLoss'], col);
-                if (netIncome !== null) {
-                    const taxes = extractValue(['IncomeTaxExpenseBenefit'], col) || 0;
-                    const interest = extractValue(['InterestExpense'], col) || 0;
-                    const da = extractValue(['DepreciationAndAmortization'], col) || 0;
-                    values[col] = netIncome + taxes + interest + da;
+                const EBIT = extractValue(['OperatingIncomeLoss'], col);
+                const depreciation = extractValue(['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization', 'Depreciation'], col) || 0;
+                if (EBIT !== null) {
+                    values[col] = EBIT + depreciation;
                 } else values[col] = null;
             } 
 
