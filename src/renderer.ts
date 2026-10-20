@@ -43,7 +43,7 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
             style: 'normal' 
         },
         { 
-            label: 'Cost of revenue', 
+            label: 'Cost of Goods Sold', 
             tags: [
                 'CostOfRevenue', 'CostOfGoodsAndServicesSold', 'CostOfGoodsSold', 
                 'CostOfServices', 'CostOfServicesExcludingDepreciationAndAmortization', 'CostOfRevenues',
@@ -57,11 +57,12 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         { label: 'Operating expenses', tags: [], style: 'header' },
         { label: 'Research and development', tags: ['ResearchAndDevelopmentExpense', 'ResearchAndDevelopmentAndComputerSoftwareExpense'], style: 'sub' },
         { label: 'Sales, general and administrative', tags: ['SellingGeneralAndAdministrativeExpense'], style: 'sub' },
-        { label: 'Total operating expenses', tags: ['OperatingExpenses', 'CostsAndExpenses'], style: 'total' },
+        { label: 'Total operating expenses', tags: ['OperatingExpenses', 'CostsAndExpenses'], style: 'normal' },
+        { label: 'EBITDA', tags: [], style: 'total' },
         { label: 'space2', tags: [], style: 'empty' },
-        { label: 'Operating income', tags: ['OperatingIncomeLoss'], style: 'normal' },
+        { label: 'Operating income (EBIT)', tags: ['OperatingIncomeLoss'], style: 'normal' },
         { label: 'Other income, net', tags: ['OtherNonoperatingIncomeExpense'], style: 'normal' },
-        { label: 'EBITDA', tags: [], style: 'normal' },
+        
         { label: 'space3', tags: [], style: 'empty' },
         { 
             label: 'Income before income tax', 
@@ -299,13 +300,6 @@ let activeGrowthChart = 'Revenue Growth';
 };
 
 let rawDividendsData: any[] | null = null;
-
-(window as any).switchIndChart = function(section: string, chartName: string) {
-    if (section === 'valuation') activeValuationChart = chartName;
-    if (section === 'profit') activeProfitChart = chartName;
-    if (section === 'liquid') activeLiquidChart = chartName;
-    renderData();
-};
 
 const currentYear = new Date().getFullYear();
 const YEARS_TO_FETCH = 20;
@@ -941,7 +935,7 @@ function formatRecommendation(key: string | null): { text: string; color: string
 
 // === FUNKCJE POMOCNICZE DLA INDICATORS ===
 function generateTableHTML(data: any[], columns: string[]) {
-    let html = `<div class="ind-table-wrapper" style="width: 100%; overflow-x: auto; margin-bottom: 8px; border-radius: 6px; border: 1px solid var(--border-color, rgba(150,150,150,0.2));">
+    let html = `<div class="ind-table-wrapper" style="width: 100%; overflow-x: auto; margin-bottom: 8px;">
         <table class="tv-table" style="margin-bottom: 0; width: 100%;">
         <thead>
             <tr>
@@ -952,21 +946,60 @@ function generateTableHTML(data: any[], columns: string[]) {
         <tbody>`;
 
     for (const row of data) {
+        // Obsługa pustego wiersza odstępu
+        if (row.style === 'empty') {
+            html += `<tr class="row-empty"><td class="sticky-col"></td><td colspan="${columns.length}"></td></tr>`;
+            continue;
+        }
+
+        // Obsługa nagłówka sekcji wewnątrz tabeli
+        if (row.style === 'header') {
+            html += `<tr><td class="sticky-col row-header-text">${row.label}</td>${columns.map(() => `<td></td>`).join('')}</tr>`;
+            continue;
+        }
+
         let trClass = row.style === 'total' ? 'row-total' : '';
         let tdClass = 'sticky-col';
         if (row.style === 'sub') tdClass += ' row-sub';
+
+        // --- 1. Wyznaczenie MIN i MAX dla bieżącego wiersza ---
+        const validVals = columns
+            .map(col => row.values[col])
+            .filter((v): v is number => v !== null && v !== undefined && Number.isFinite(v));
+
+        const minVal = validVals.length > 0 ? Math.min(...validVals) : 0;
+        const maxVal = validVals.length > 0 ? Math.max(...validVals) : 0;
 
         html += `<tr class="${trClass}"><td class="${tdClass}">${row.label}</td>`;
 
         columns.forEach(col => {
             const val = row.values[col];
             let displayVal = '';
+            let cellStyle = '';
 
-            if (row.format === 'missing_price') displayVal = '<span style="color: #aaa; font-size: 11px;">Wymaga ceny</span>';
-            else if (val !== null && val !== undefined) displayVal = formatTypedValue(val, row.format);
-            else displayVal = '—';
+            if (row.format === 'missing_price') {
+                displayVal = '<span style="color: #aaa; font-size: 11px;">Wymaga ceny</span>';
+            } else if (val !== null && val !== undefined && Number.isFinite(val)) {
+                displayVal = formatTypedValue(val, row.format);
 
-            html += `<td>${displayVal}</td>`;
+                if (!row.noHeatmap) {
+                // --- 2. Wyliczenie koloru tła (0 = najniższa wartość / najjaśniejszy, 1 = najwyższa / najciemniejszy) ---
+                const ratio = maxVal > minVal ? (val - minVal) / (maxVal - minVal) : 0.5;
+                
+                // Wariant A (Styl błękitny CFI jak na zrzucie - od jasnego błękitu 88% do ciemniejszego 58%):
+                const lightness = Math.round(88 - (ratio * 30)); // 88% (jasny) -> 58% (ciemny)
+                cellStyle = `background-color: hsl(213, 65%, ${lightness}%); color: #0f172a; font-weight: 500;`;
+                
+                // Wariant B (Dla ciemnego motywu z białą czcionką - od jaśniejszego niebieskiego 42% do ciemnego granatu 18%):
+                // const lightness = Math.round(42 - (ratio * 24)); // 42% (jaśniejszy) -> 18% (ciemniejszy)
+                // cellStyle = `background-color: hsl(215, 55%, ${lightness}%); color: #ffffff;`;
+                }
+
+            } else {
+                displayVal = '—';
+            }
+
+            html += `<td style="${cellStyle}">${displayVal}</td>`;
         });
 
         html += `</tr>`;
@@ -1589,8 +1622,8 @@ function renderData() {
                 </div>
 
                 <!-- Sekcja pomocnicza: Other Financial Information (NOPAT, Invested Capital, Net Assets) -->
-                <h3>Other Financial Information</h3>
-                <div style="padding: 16px;">
+                <h3 style="margin-bottom: 0px;">Other Financial Information</h3>
+                <div style="padding: 0 16px 16px 16px; margin-top: 0px;">
                     ${generateTableHTML(calcInd.otherFinancialInfo, displayColumns)}
                 </div>
             </div>
@@ -2175,8 +2208,8 @@ function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarter
             const prevCol = columns[i + 1];
             
             // 1. Złożone wskaźniki (Wymagające krzyżowych wyliczeń)
-            if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Dividend Yield' || def.label.includes('RO') || def.label === 'Current Ratio' || def.label === 'Debt Ratio' || def.label === 'Payout Ratio') {
-
+            // 1. Wskaźniki wyceny rynkowej i dywidend (pozostałe Indicators liczy funkcja calculateIndicators)
+            if (def.label === 'P/E Ratio' || def.label === 'P/BV Ratio' || def.label === 'Dividend Yield' || def.label === 'Payout Ratio') {
                 const calc: any = {
                     netIncome: extractValue(['NetIncomeLoss', 'ProfitLoss'], col),
                     ttmNetIncome: getTTMValue(['NetIncomeLoss', 'ProfitLoss'], i),
@@ -2253,21 +2286,6 @@ function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarter
                 } else if (def.label === 'Dividend Yield') {
                     // ZMIANA: Wyświetlamy Yield TYLKO wtedy, gdy w analizowanym okresie (np. Q4) faktycznie była dywidenda (calc.dps > 0)
                     values[col] = (calc.price && ttmDps && ttmDps > 0 && calc.dps && calc.dps > 0) ? (ttmDps / calc.price) * 100 : null;
-                } else if (def.label.includes('ROE')) {
-                    const averageEquity = calc.prevEquity ? (calc.equity! + calc.prevEquity) / 2 : calc.equity;
-                    values[col] = (calc.ttmNetIncome && averageEquity) ? (calc.ttmNetIncome / averageEquity) * 100 : null;
-                } else if (def.label.includes('ROA')) {
-                    const averageAssets = calc.prevAssets ? (calc.assets! + calc.prevAssets) / 2 : calc.assets;
-                    values[col] = (calc.ttmNetIncome && averageAssets) ? (calc.ttmNetIncome / averageAssets) * 100 : null;
-                } else if (def.label.includes('ROIC')) {
-                    const currentIC = (calc.assets && calc.currLiab) ? calc.assets - calc.currLiab : null;
-                    const prevIC = (calc.prevAssets && calc.prevCurrLiab) ? calc.prevAssets - calc.prevCurrLiab : null;
-                    const averageIC = prevIC ? (currentIC! + prevIC) / 2 : currentIC;
-                    values[col] = (calc.ttmOpIncome && averageIC) ? (calc.ttmOpIncome / averageIC) * 100 : null;
-                } else if (def.label === 'Current Ratio') {
-                    values[col] = (calc.currAssets && calc.currLiab) ? calc.currAssets / calc.currLiab : null;
-                } else if (def.label === 'Debt Ratio') {
-                    values[col] = (calc.liab && calc.assets) ? (calc.liab / calc.assets) * 100 : null;
                 } else if (def.label === 'Payout Ratio') {
                     if (calc.divPaid !== null && calc.netIncome !== null && calc.netIncome !== 0) {
                         // Główna metoda: z raportu Cash Flow (Całkowite wypłacone dywidendy / Zysk netto)
@@ -2312,7 +2330,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarter
             } 
 
             // --- NOWA LOGIKA DLA KOSZTÓW I ZYSKU BRUTTO ---
-            else if (def.label === 'Cost of revenue') {
+            else if (def.label === 'Cost of Goods Sold') {
                 const cost = extractValue(def.tags, col);
                 if (cost !== null) {
                     values[col] = cost;
@@ -2331,7 +2349,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarter
                     values[col] = reportedGross; 
                 } else {
                     const revTags = METRICS_MAP.income.find(m => m.label === 'Revenue')?.tags || [];
-                    const costTags = METRICS_MAP.income.find(m => m.label === 'Cost of revenue')?.tags || [];
+                    const costTags = METRICS_MAP.income.find(m => m.label === 'Cost of Goods Sold')?.tags || [];
                     
                     const rev = extractValue(revTags, col);
                     const cost = extractValue(costTags, col);
@@ -2347,7 +2365,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarter
             // ----------------------------------------------
 
             // 5. Ręczne wyliczanie "Zysku operacyjnego" dla firm typu Single-Step
-            else if (def.label === 'Operating income') {
+            else if (def.label === 'Operating income (EBIT)') {
                 const reportedOpInc = extractValue(def.tags, col);
                 if (reportedOpInc !== null) {
                     values[col] = reportedOpInc;
@@ -2955,7 +2973,7 @@ function renderChart(tableData: any[], columns: string[]) {
             datasets = [
                 { label: 'Revenue', data: getRowValues('Revenue'), backgroundColor: '#448AFF', borderRadius: 2 },
                 { label: 'Gross profit', data: getRowValues('Gross profit'), backgroundColor: '#4DD0E1', borderRadius: 2 },
-                { label: 'Operating income', data: getRowValues('Operating income'), backgroundColor: '#F57F17', borderRadius: 2 },
+                { label: 'Operating income (EBIT)', data: getRowValues('Operating income (EBIT)'), backgroundColor: '#F57F17', borderRadius: 2 },
                 { label: 'Income before tax', data: getRowValues('Income before income tax'), backgroundColor: '#B388FF', borderRadius: 2 },
                 { label: 'Net income', data: getRowValues('Net income'), backgroundColor: '#FBC02D', borderRadius: 2 }
             ];
@@ -3534,22 +3552,42 @@ interface CalculatedIndicatorsResult {
 }
 
 function calculateIndicators(columns: string[]): CalculatedIndicatorsResult {
-    // Pobieramy bazowe sprawozdania finansowe (zawierają już wyliczenia Q4 i fallbacki XBRL)
+    // 1. Pobieramy bazowe sprawozdania finansowe JEDNOKROTNIE dla wszystkich kolumn
     const incomeData = processSecData(METRICS_MAP.income, columns);
     const balanceData = processSecData(METRICS_MAP.balance, columns);
     const cashflowData = processSecData(METRICS_MAP.cashflow, columns);
 
-    const getVal = (data: any[], label: string, col: string): number | null => {
+    // Pobieramy koszty odsetkowe (Interest Expense) jednokrotnie dla całej osi czasu
+    const interestData = processSecData([
+        {
+            label: 'Interest Expense',
+            tags: ['InterestExpense', 'InterestExpenseDebt', 'InterestAndDebtExpense', 'InterestExpenseNet'],
+            style: 'normal'
+        }
+    ], columns);
+
+    const getVal = (data: any[], label: string, col: string | undefined): number | null => {
+        if (!col) return null;
         const row = data.find(r => r.label === label);
         const val = row?.values?.[col];
         return (val !== undefined && val !== null) ? Number(val) : null;
     };
 
-    // Pomocniczy ekstraktor dla tagów spoza głównych wierszy tabeli (np. Interest Expense)
-    const extractDirectTag = (tags: string[], col: string): number | null => {
-        const tempDef: MetricDef[] = [{ label: 'temp', tags, style: 'normal' }];
-        const res = processSecData(tempDef, [col]);
-        return res[0]?.values?.[col] ?? null;
+    // Suma TTM (4 ostatnie kwartały) dla pozycji wynikowych, gdy jesteśmy w widoku kwartalnym
+    const getFlowTTM = (data: any[], label: string, colIndex: number): number | null => {
+        const isQuarterly = columns[colIndex]?.includes('Q');
+        if (!isQuarterly) {
+            return getVal(data, label, columns[colIndex]);
+        }
+        let sum = 0;
+        for (let k = 0; k < 4; k++) {
+            const targetCol = columns[colIndex + k];
+            if (!targetCol) return null;
+            const v = getVal(data, label, targetCol);
+            if (v === null) return null;
+            sum += v;
+        }
+        return sum;
     };
 
     const safeDiv = (num: number | null, den: number | null, mult: number = 1): number | null => {
@@ -3557,28 +3595,52 @@ function calculateIndicators(columns: string[]): CalculatedIndicatorsResult {
         return (num / den) * mult;
     };
 
-    const makeRow = (label: string, format: ValueFormat, style: RowStyle = 'normal') => ({
+    // Bezpieczna średnia z dwóch okresów (odporna na null)
+    const calcAvg = (curr: number | null, prev: number | null): number | null => {
+        if (curr === null) return null;
+        return prev !== null ? (curr + prev) / 2 : curr;
+    };
+
+    // Funkcja pomocnicza wyliczająca Invested Capital dla dowolnej kolumny (bieżącej lub poprzedniej)
+    const getInvestedCapitalForCol = (targetCol: string | undefined): number | null => {
+        if (!targetCol) return null;
+        const eq = getVal(balanceData, 'Total Shareholders Equity', targetCol);
+        if (eq === null) return null;
+        const stDebt = getVal(balanceData, 'Loans / Short-Term Debt', targetCol) ?? 0;
+        const ltDebt = getVal(balanceData, 'Long-Term Debt', targetCol) ?? 0;
+        const csh = getVal(balanceData, 'Cash & Equivalents', targetCol) ?? 0;
+        const nDebt = (stDebt + ltDebt) - csh;
+        return nDebt + eq;
+    };
+
+    const makeRow = (label: string, format: ValueFormat, style: RowStyle = 'normal', noHeatmap: boolean = false) => ({
         label,
         style,
         format,
+        noHeatmap,
         values: {} as Record<string, number | null>
     });
 
     // =========================================================================
-    // 0. OTHER FINANCIAL INFORMATION (Dane pośrednie z 1. zrzutu)
+    // 0. OTHER FINANCIAL INFORMATION
+    // =========================================================================
+    // =========================================================================
+    // 0. OTHER FINANCIAL INFORMATION
     // =========================================================================
     const rowsOther = {
-        ebit: makeRow('EBIT', 'currency'),
-        effTaxRate: makeRow('Effective Tax Rate', 'percent'),
-        nopat: makeRow('NOPAT', 'currency', 'total'),
-        ibCurrLiab: makeRow('Interest Bearing Current Liabilities', 'currency'),
-        ibLongLiab: makeRow('Interest Bearing Long Term Liabilities', 'currency'),
-        totalIbLiab: makeRow('Total Interest Bearing Liabilities', 'currency', 'total'),
-        cash: makeRow('Cash', 'currency'),
-        netDebt: makeRow('Net Debt', 'currency', 'total'),
-        equity: makeRow('Equity', 'currency'),
-        investedCapital: makeRow('Invested Capital (aka Capital Employed)', 'currency', 'total'),
-        netAssets: makeRow('Net Assets', 'currency', 'total')
+        ebit: makeRow('EBIT', 'currency', 'normal', true),
+        effTaxRate: makeRow('Effective Tax Rate', 'percent', 'normal', true),
+        nopat: makeRow('NOPAT', 'currency', 'total', true),
+        space1: makeRow('', 'currency', 'empty', true),
+        ibCurrLiab: makeRow('Interest Bearing Current Liabilities', 'currency', 'normal', true),
+        ibLongLiab: makeRow('Interest Bearing Long Term Liabilities', 'currency', 'normal', true),
+        totalIbLiab: makeRow('Total Interest Bearing Liabilities', 'currency', 'normal', true),
+        cash: makeRow('Cash', 'currency', 'normal', true),
+        netDebt: makeRow('Net Debt', 'currency', 'normal', true),
+        equity: makeRow('Equity', 'currency', 'normal', true),
+        investedCapital: makeRow('Invested Capital (Capital Employed)', 'currency', 'total', true),
+        space2: makeRow('', 'currency', 'empty', true),
+        netAssets: makeRow('Net Assets', 'currency', 'total', true)
     };
 
     // =========================================================================
@@ -3656,7 +3718,6 @@ function calculateIndicators(columns: string[]): CalculatedIndicatorsResult {
         dtl: makeRow('Degree of Total Leverage', 'ratio')
     };
 
-    // Słownik wartości bazowych na potrzeby wyliczeń dynamiki (Growth Trends)
     const baseMetricsPerCol: Record<string, {
         revenue: number | null;
         ebitda: number | null;
@@ -3665,34 +3726,44 @@ function calculateIndicators(columns: string[]): CalculatedIndicatorsResult {
         totalAssets: number | null;
     }> = {};
 
-    columns.forEach((col) => {
-        // --- DANE Z RACHUNKU ZYSKÓW I STRAT (INCOME STATEMENT) ---
+    columns.forEach((col, i) => {
+        const isQuarterly = col.includes('Q');
+        const prevCol = columns[i + 1];
+
+        // --- DANE Z RACHUNKU ZYSKÓW I STRAT (Dla danego okresu) ---
         const revenue = getVal(incomeData, 'Revenue', col);
-        const cogs = getVal(incomeData, 'Cost of revenue', col);
+        const cogs = getVal(incomeData, 'Cost of Goods Sold', col);
         const grossProfit = getVal(incomeData, 'Gross profit', col);
         const rd = getVal(incomeData, 'Research and development', col);
         const sga = getVal(incomeData, 'Sales, general and administrative', col);
         const totalOpex = getVal(incomeData, 'Total operating expenses', col);
-        const ebit = getVal(incomeData, 'Operating income', col);
+        const ebit = getVal(incomeData, 'Operating income (EBIT)', col);
         const otherNonOp = getVal(incomeData, 'Other income, net', col);
         const ebt = getVal(incomeData, 'Income before income tax', col);
         const tax = getVal(incomeData, 'Income tax expense', col);
         const netIncome = getVal(incomeData, 'Net income', col);
 
-        // --- DANE Z PRZEPŁYWÓW PIENIĘŻNYCH (CASH FLOW) ---
+        // --- DANE TTM (Do wskaźników łączących RZiS z Bilansem w trybie kwartalnym) ---
+        const ttmRevenue = getFlowTTM(incomeData, 'Revenue', i) ?? revenue;
+        const ttmCogs = getFlowTTM(incomeData, 'Cost of Goods Sold', i) ?? cogs;
+        const ttmEbit = getFlowTTM(incomeData, 'Operating income (EBIT)', i) ?? ebit;
+        const ttmEbt = getFlowTTM(incomeData, 'Income before income tax', i) ?? ebt;
+        const ttmTax = getFlowTTM(incomeData, 'Income tax expense', i) ?? tax;
+        const ttmNetIncome = getFlowTTM(incomeData, 'Net income', i) ?? netIncome;
+        const ttmDepr = getFlowTTM(cashflowData, 'Depreciation', i);
+
+        // --- DANE Z CASH FLOW I ODSETKI ---
         const depreciation = getVal(cashflowData, 'Depreciation', col);
         const ebitdaFromIncome = getVal(incomeData, 'EBITDA', col);
-        // Zgodnie z arkuszem CFI: EBITDA = EBIT + Depreciation (z fallbackiem do wyliczenia z tabeli)
         const ebitda = (ebit !== null && depreciation !== null) ? (ebit + depreciation) : ebitdaFromIncome;
 
-        // Koszty odsetkowe (Interest Expense)
-        const interestExpenseRaw = extractDirectTag([
-            'InterestExpense',
-            'InterestExpenseDebt',
-            'InterestAndDebtExpense',
-            'InterestExpenseNet'
-        ], col);
+        const ttmEbitdaFromIncome = getFlowTTM(incomeData, 'EBITDA', i);
+        const ttmEbitda = (ttmEbit !== null && ttmDepr !== null) ? (ttmEbit + ttmDepr) : (ttmEbitdaFromIncome ?? ebitda);
+
+        const interestExpenseRaw = getVal(interestData, 'Interest Expense', col);
         const interestExpense = interestExpenseRaw !== null ? Math.abs(interestExpenseRaw) : null;
+        const ttmInterestRaw = getFlowTTM(interestData, 'Interest Expense', i);
+        const ttmInterestExpense = ttmInterestRaw !== null ? Math.abs(ttmInterestRaw) : interestExpense;
 
         // Pozostałe koszty operacyjne (Other Operating Expenses)
         let otherOpex: number | null = rd;
@@ -3717,17 +3788,19 @@ function calculateIndicators(columns: string[]): CalculatedIndicatorsResult {
         const equity = getVal(balanceData, 'Total Shareholders Equity', col);
 
         // --- 0. WYLICZENIE OTHER FINANCIAL INFORMATION ---
-        const effTaxRateDecimal = safeDiv(tax, ebt, 1); // ułamek np. 0.2581
+        const effTaxRateDecimal = safeDiv(tax, ebt, 1);
         const effTaxRatePercent = effTaxRateDecimal !== null ? effTaxRateDecimal * 100 : null;
         const nopat = (ebit !== null && effTaxRateDecimal !== null) ? ebit * (1 - effTaxRateDecimal) : null;
 
+        // TTM NOPAT (dla ROIC w widoku kwartalnym)
+        const ttmEffTaxDecimal = safeDiv(ttmTax, ttmEbt, 1);
+        const ttmNopat = (ttmEbit !== null && ttmEffTaxDecimal !== null) ? ttmEbit * (1 - ttmEffTaxDecimal) : nopat;
+
         const totalIbLiab = shortTermDebt + longTermDebt;
         const netDebt = totalIbLiab - cash;
-        const investedCapital = equity !== null ? netDebt + equity : null;
+        const investedCapital = getInvestedCapitalForCol(col);
 
-        // Non Interest Bearing Current Liabilities = Current Liabilities - Interest Bearing Current Liabilities
         const nonIbCurrLiab = currLiab !== null ? (currLiab - shortTermDebt) : null;
-        // Net Assets = Current Assets - Cash + Long Term Assets - Non Interest Bearing Current Liabilities
         const netAssets = (currAssets !== null && longTermAssets !== null && nonIbCurrLiab !== null)
             ? (currAssets - cash + longTermAssets - nonIbCurrLiab)
             : (ppeNet !== null && currAssets !== null && currLiab !== null ? ppeNet + (currAssets - currLiab) : null);
@@ -3744,11 +3817,20 @@ function calculateIndicators(columns: string[]): CalculatedIndicatorsResult {
         rowsOther.investedCapital.values[col] = investedCapital;
         rowsOther.netAssets.values[col] = netAssets;
 
+        // --- ŚREDNIE Z BILANSU (Poprawione prevInvestedCapital, prevEquity, prevAssets) ---
+        const prevEquity = getVal(balanceData, 'Total Shareholders Equity', prevCol);
+        const prevAssets = getVal(balanceData, 'Total Assets', prevCol);
+        const prevInvestedCapital = getInvestedCapitalForCol(prevCol);
+
+        const averageEquity = calcAvg(equity, prevEquity);
+        const averageAssets = calcAvg(totalAssets, prevAssets);
+        const averageInvestedCapital = calcAvg(investedCapital, prevInvestedCapital);
+
         // --- 1. WYLICZENIE PROFITABILITY AND RETURN RATIOS ---
-        rowsProfit.roe.values[col] = safeDiv(netIncome, equity, 100);
-        rowsProfit.roa.values[col] = safeDiv(netIncome, totalAssets, 100);
-        rowsProfit.rona.values[col] = safeDiv(netIncome, netAssets, 100);
-        rowsProfit.roic.values[col] = safeDiv(nopat, investedCapital, 100);
+        rowsProfit.roe.values[col] = safeDiv(ttmNetIncome, averageEquity, 100);
+        rowsProfit.roa.values[col] = safeDiv(ttmNetIncome, averageAssets, 100);
+        rowsProfit.rona.values[col] = safeDiv(ttmNetIncome, netAssets, 100);
+        rowsProfit.roic.values[col] = safeDiv(ttmNopat, averageInvestedCapital, 100);
         rowsProfit.grossMargin.values[col] = safeDiv(grossProfit, revenue, 100);
         rowsProfit.sgaRev.values[col] = safeDiv(sga, revenue, 100);
         rowsProfit.otherOpexRev.values[col] = safeDiv(otherOpex, revenue, 100);
@@ -3761,24 +3843,24 @@ function calculateIndicators(columns: string[]): CalculatedIndicatorsResult {
         rowsProfit.netMargin.values[col] = safeDiv(netIncome, revenue, 100);
         rowsProfit.effTaxRate.values[col] = effTaxRatePercent;
         rowsProfit.taxBurden.values[col] = safeDiv(netIncome, ebt, 100);
-        rowsProfit.effIntRate.values[col] = safeDiv(interestExpense, totalIbLiab, 100);
+        rowsProfit.effIntRate.values[col] = safeDiv(ttmInterestExpense, totalIbLiab, 100);
         rowsProfit.intBurden.values[col] = safeDiv(ebt, ebit, 100);
 
         // --- 2. WYLICZENIE ASSET UTILIZATION RATIOS ---
-        const cashDaysVal = safeDiv(cash * 365, revenue, 1);
-        const arDaysVal = ar !== null ? safeDiv(ar * 365, revenue, 1) : null;
-        const invDaysVal = safeDiv(inventory * 365, cogs, 1);
-        const apDaysVal = ap !== null ? safeDiv(ap * 365, cogs, 1) : null;
+        const cashDaysVal = safeDiv(cash * 365, ttmRevenue, 1);
+        const arDaysVal = ar !== null ? safeDiv(ar * 365, ttmRevenue, 1) : null;
+        const invDaysVal = safeDiv(inventory * 365, ttmCogs, 1);
+        const apDaysVal = ap !== null ? safeDiv(ap * 365, ttmCogs, 1) : null;
 
-        rowsAssetUtil.assetTurnover.values[col] = safeDiv(revenue, totalAssets, 1);
-        rowsAssetUtil.ppeTurnover.values[col] = safeDiv(revenue, ppeNet, 1);
-        rowsAssetUtil.cashTurnover.values[col] = safeDiv(revenue, cash, 1);
+        rowsAssetUtil.assetTurnover.values[col] = safeDiv(ttmRevenue, totalAssets, 1);
+        rowsAssetUtil.ppeTurnover.values[col] = safeDiv(ttmRevenue, ppeNet, 1);
+        rowsAssetUtil.cashTurnover.values[col] = safeDiv(ttmRevenue, cash, 1);
         rowsAssetUtil.cashDays.values[col] = cashDaysVal;
-        rowsAssetUtil.arTurnover.values[col] = safeDiv(revenue, ar, 1);
+        rowsAssetUtil.arTurnover.values[col] = safeDiv(ttmRevenue, ar, 1);
         rowsAssetUtil.arDays.values[col] = arDaysVal;
-        rowsAssetUtil.invTurnover.values[col] = safeDiv(cogs, inventory, 1);
+        rowsAssetUtil.invTurnover.values[col] = safeDiv(ttmCogs, inventory, 1);
         rowsAssetUtil.invDays.values[col] = invDaysVal;
-        rowsAssetUtil.apTurnover.values[col] = safeDiv(cogs, ap, 1);
+        rowsAssetUtil.apTurnover.values[col] = safeDiv(ttmCogs, ap, 1);
         rowsAssetUtil.apDays.values[col] = apDaysVal;
         rowsAssetUtil.ccc.values[col] = (arDaysVal !== null && invDaysVal !== null && apDaysVal !== null)
             ? (arDaysVal + invDaysVal - apDaysVal)
@@ -3788,15 +3870,14 @@ function calculateIndicators(columns: string[]): CalculatedIndicatorsResult {
         rowsLeverage.assetToEquity.values[col] = safeDiv(totalAssets, equity, 1);
         rowsLeverage.liabToEquity.values[col] = safeDiv(totalLiab, equity, 1);
         rowsLeverage.debtToEquity.values[col] = safeDiv(totalIbLiab, equity, 1);
-        rowsLeverage.debtToEbitda.values[col] = safeDiv(totalIbLiab, ebitda, 1);
-        rowsLeverage.netDebtToEbitda.values[col] = safeDiv(netDebt, ebitda, 1);
+        rowsLeverage.debtToEbitda.values[col] = safeDiv(totalIbLiab, ttmEbitda, 1);
+        rowsLeverage.netDebtToEbitda.values[col] = safeDiv(netDebt, ttmEbitda, 1);
 
         // --- 4. WYLICZENIE LIQUIDITY RATIOS ---
         rowsLiquidity.current.values[col] = safeDiv(currAssets, currLiab, 1);
         rowsLiquidity.quick.values[col] = currAssets !== null ? safeDiv(currAssets - inventory, currLiab, 1) : null;
         rowsLiquidity.intCoverage.values[col] = safeDiv(ebitda, interestExpense, 1);
 
-        // Zapis danych bazowych dla wyliczenia Growth Trends w kolejnym kroku
         baseMetricsPerCol[col] = {
             revenue,
             ebitda,
@@ -3807,7 +3888,6 @@ function calculateIndicators(columns: string[]): CalculatedIndicatorsResult {
     });
 
     // --- 5. WYLICZENIE GROWTH TRENDS ---
-    // Uwaga: columns są uporządkowane od najnowszego do najstarszego, więc okres poprzedni to columns[i + 1]
     columns.forEach((col, i) => {
         const prevCol = columns[i + 1];
         if (!prevCol || !baseMetricsPerCol[prevCol]) {
