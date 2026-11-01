@@ -20,6 +20,8 @@ interface MetricDef {
     format?: ValueFormat; // Domyślnie 'currency'
 }
 
+const SHARED_DEPRECIATION_TAGS = ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization', 'Depreciation'];
+
 const METRICS_MAP: Record<string, MetricDef[]> = {
     income: [
         { 
@@ -52,20 +54,26 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
             ], 
             style: 'normal' 
         },
-        { label: 'Gross profit', tags: ['GrossProfit', 'GrossMargin'], style: 'total' }, // Mastercard tego nie raportuje
+        { label: 'Gross Profit', tags: ['GrossProfit', 'GrossMargin'], style: 'total' }, // Mastercard tego nie raportuje
         { label: 'space1', tags: [], style: 'empty' },
-        { label: 'Operating expenses', tags: [], style: 'header' },
+        // { label: 'Operating expenses', tags: [], style: 'header' },
         { label: 'Research and development', tags: ['ResearchAndDevelopmentExpense', 'ResearchAndDevelopmentAndComputerSoftwareExpense'], style: 'sub' },
         { label: 'Sales, general and administrative', tags: ['SellingGeneralAndAdministrativeExpense'], style: 'sub' },
+        
+        { label: 'General and administrative', tags: ['GeneralAndAdministrativeExpense'], style: 'sub' },
+        { label: 'Sales and marketing', tags: ['SellingAndMarketingExpense'], style: 'sub' },
+
         { label: 'Total operating expenses', tags: ['OperatingExpenses', 'CostsAndExpenses'], style: 'normal' },
         { label: 'EBITDA', tags: [], style: 'total' },
         { label: 'space2', tags: [], style: 'empty' },
-        { label: 'Operating income (EBIT)', tags: ['OperatingIncomeLoss'], style: 'normal' },
-        { label: 'Other income, net', tags: ['OtherNonoperatingIncomeExpense'], style: 'normal' },
-        
+        { label: 'Depreciation', tags: SHARED_DEPRECIATION_TAGS, style: 'sub' },
+        { label: 'Operating income (EBIT)', tags: ['OperatingIncomeLoss'], style: 'total' },
         { label: 'space3', tags: [], style: 'empty' },
-        { 
-            label: 'Income before income tax', 
+        { label: 'Interest expense', tags: ['InterestExpenseNonoperating', 'InterestExpense'], style: 'sub' },
+        { label: 'Other income / expense, net', tags: ['OtherNonoperatingIncomeExpense', 'NonoperatingIncomeExpense'], style: 'sub' },
+        
+        
+        { label: 'Earnings Before Taxes', 
             tags: [
                 'IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest',
                 'IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments',
@@ -81,10 +89,11 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
                 'ProfitLossBeforeTax',
                 'IncomeLossFromContinuingOperationsBeforeIncomeTaxesAndEquityMethodInvestments'
             ], 
-            style: 'normal' 
+            style: 'total' 
         },
+        { label: 'space4', tags: [], style: 'empty' },
         { 
-            label: 'Income tax expense', 
+            label: 'Provision for Taxes', 
             tags: [
                 'IncomeTaxExpenseBenefit', 
                 'ProvisionForIncomeTaxes', 
@@ -92,7 +101,7 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
             ], 
             style: 'normal' 
         },
-        { label: 'Net income', tags: [
+        { label: 'Net Income', tags: [
             'NetIncomeLoss',
             'ProfitLoss',
             'NetIncomeLossAvailableToCommonStockholders',
@@ -101,11 +110,11 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
             'IncomeLossFromContinuingOperations',
             'IncomeLossFromContinuingOperationsNetOfTax'
             ], style: 'total' },
-        { label: 'space4', tags: [], style: 'empty' },
-        { label: 'Net income per share:', tags: [], style: 'header' },
+        { label: 'space5', tags: [], style: 'empty' },
+        { label: 'Earnings per share:', tags: [], style: 'header' },
         { label: 'Basic', tags: ['EarningsPerShareBasic', 'EarningsPerShareDiluted'], style: 'sub', format: 'decimal' },
         { label: 'Diluted', tags: ['EarningsPerShareDiluted', 'EarningsPerShareBasic'], style: 'sub', format: 'decimal' },
-        { label: 'space5', tags: [], style: 'empty' },
+        { label: 'space6', tags: [], style: 'empty' },
         { label: 'Weighted average shares outstanding:', tags: [], style: 'header' },
         { 
             label: 'Shares (Basic)', 
@@ -133,7 +142,9 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         { label: 'Assets', tags: [], style: 'header' },
         { label: 'Current Assets', tags: [], style: 'header' },
         { label: 'Cash & Equivalents', tags: ['CashAndCashEquivalentsAtCarryingValue', 'Cash'], style: 'sub' },
+        { label: 'Short-Term Investments', tags: ['MarketableSecuritiesCurrent', 'AvailableForSaleSecuritiesDebtSecuritiesCurrent', 'ShortTermInvestments'], style: 'sub' },
         { label: 'Accounts Receivable', tags: ['AccountsReceivableNetCurrent', 'AccountsAndNotesReceivableNet'], style: 'sub' },
+        { label: 'Prepaid expenses and other current assets', tags: ['PrepaidExpenseAndOtherAssetsCurrent'], style: 'sub' },
         { label: 'Inventory', tags: ['InventoryNet'], style: 'sub' },
         { label: 'Total Current Assets', tags: ['AssetsCurrent'], style: 'total' },
         { label: 'space1', tags: [], style: 'empty' },
@@ -162,7 +173,7 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         { label: 'space4', tags: [], style: 'empty' },
         
         { label: 'Non-Current Liabilities', tags: [], style: 'header' },
-        { label: 'Long-Term Debt', tags: ['LongTermDebtNoncurrent', 'LongTermDebt', 'LongTermDebtAndCapitalLeaseObligations'], style: 'sub' },
+        { label: 'Long-Term Debt', tags: ['LongTermDebtNoncurrent', 'LongTermDebt', 'LongTermDebtAndCapitalLeaseObligations', 'LongTermNotesAndLoans'], style: 'sub' },
         { label: 'Total Non-Current Liabilities', tags: ['LiabilitiesNoncurrent'], style: 'total' },
         { label: 'space5', tags: [], style: 'empty' },
         
@@ -171,6 +182,7 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         
         { label: 'Shareholders Equity', tags: [], style: 'header' },
         { label: 'Equity Capital', tags: ['CommonStockValue', 'CommonStockIncludingAdditionalPaidInCapital'], style: 'sub' },
+        // 'Additional paid-in-capital'
         { label: 'Retained Earnings', tags: ['RetainedEarningsAccumulatedDeficit'], style: 'sub' },
         { label: 'Total Shareholders Equity', tags: ['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'], style: 'total' },
         { label: 'space7', tags: [], style: 'empty' },
@@ -183,7 +195,7 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         // --- 1. CASH FROM OPERATING ---
         { label: 'CASH FROM OPERATING', tags: [], style: 'header' },
         { label: 'Net Income', tags: ['NetIncomeLoss', 'ProfitLoss'], style: 'sub' },
-        { label: 'Depreciation', tags: ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization', 'Depreciation'], style: 'sub' },
+        { label: 'Depreciation', tags: SHARED_DEPRECIATION_TAGS, style: 'sub' },
         { label: 'Deferred Tax', tags: ['DeferredIncomeTaxExpenseBenefit', 'DeferredIncomeTaxes'], style: 'sub' },
         { label: 'Cash From Accounts Receivable', tags: ['IncreaseDecreaseInAccountsReceivable'], style: 'sub' },
         { label: 'Cash From Inventory', tags: ['IncreaseDecreaseInInventories'], style: 'sub' },
@@ -1674,7 +1686,7 @@ function renderData() {
                 const qIncomeData = processSecData(METRICS_MAP.income, qCols);
                 const equityRow = qBalanceData.find(r => r.label === 'Total Shareholders Equity');
                 const epsRow = qIncomeData.find(r => r.label === 'Diluted') ?? qIncomeData.find(r => r.label === 'Basic');
-                const netIncomeRow = qIncomeData.find(r => r.label === 'Net income');
+                const netIncomeRow = qIncomeData.find(r => r.label === 'Net Income');
 
                 if (equityRow && epsRow && netIncomeRow) {
                     for (let i = 0; i < qCols.length; i++) {
@@ -1854,6 +1866,45 @@ function renderData() {
 function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarterlyLogic: boolean = false) {
     const result: any[] = [];
     const rawData = rawSecData;
+
+    // Funkcja pomocnicza zwracająca gotową, zsumowaną wartość R&D dla wskazanej kolumny
+    const getResearchAndDevelopment = (col: string): number | null => {
+        // 1. Sprawdzamy standardowe tagi z mapy dla R&D
+        const rdDef = METRICS_MAP.income.find(m => m.label === 'Research and development');
+        const reportedRd = rdDef ? extractValue(rdDef.tags, col) : null;
+        
+        if (reportedRd !== null) {
+            return reportedRd;
+        }
+        
+        // 2. Jeśli brak, sumujemy dwa składowe tagi
+        const rdExcl = extractValue(['ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost'], col);
+        const rdAcquired = extractValue(['ResearchAndDevelopmentAssetAcquiredOtherThanThroughBusinessCombinationWrittenOff'], col);
+
+        if (rdExcl !== null || rdAcquired !== null) {
+            return (rdExcl ?? 0) + (rdAcquired ?? 0);
+        }
+        
+        return null;
+    };
+
+    // Funkcja pomocnicza zwracająca gotowe Total Operating Expenses (z fallbackiem na sumę R&D + SG&A)
+    const getTotalOperatingExpenses = (col: string): number | null => {
+        // 1. Sprawdzamy standardowe tagi zbiorcze z mapy
+        const opexDef = METRICS_MAP.income.find(m => m.label === 'Total operating expenses');
+        const reportedOpex = opexDef ? extractValue(opexDef.tags, col) : null;
+        
+        if (reportedOpex !== null) {
+            return reportedOpex;
+        }
+        
+        // 2. Jeśli brak zbiorczego tagu, sumujemy składowe (wykorzystując już gotową funkcję R&D)
+        const rd = getResearchAndDevelopment(col) || 0;
+        const sga = extractValue(['SellingGeneralAndAdministrativeExpense', 'GeneralAndAdministrativeExpense', 'SellingAndMarketingExpense'], col) || 0;
+        
+        const totalCalculated = rd + sga;
+        return totalCalculated > 0 ? totalCalculated : null;
+    };
 
         // Pomocnicza funkcja wydzielona do bezpośredniego pobierania wartości per kwartał / rok
     const getRawValue = (tags: string[], year: number, isQuarterly: boolean, quarterStr: string | null, forceYTD: boolean = false) => {
@@ -2318,15 +2369,42 @@ function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarter
                 const rawVal = extractValue(def.tags, col);
                 values[col] = rawVal !== null ? rawVal * splitFactor : null;
             }
-            // 3. Ręczne wyliczenie EBITDA
-            else if (def.label === 'EBITDA') {
-                const EBIT = extractValue(['OperatingIncomeLoss'], col);
-                const depreciation = extractValue(['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization', 'Depreciation'], col) || 0;
-                if (EBIT !== null) {
-                    values[col] = EBIT + depreciation;
-                } else values[col] = null;
-            } 
+            // 3. Ręczne wyliczenie EBITDA / EBIT (Oparte o EBT i korektę finansową)
+            else if (def.label === 'EBITDA' || def.label === 'Operating income (EBIT)') {
+                let effectiveEbit = extractValue(['OperatingIncomeLoss'], col);
+                
+                if (effectiveEbit === null) {
+                    // Najdokładniejsza metoda dla nietypowych Opexów: 
+                    // EBIT = Income Before Tax (EBT) + Interest Expense - Other Nonoperating Income/Expense
+                    const ebtTags = METRICS_MAP.income.find(m => m.label === 'Earnings Before Taxes')?.tags || [];
+                    const ebt = extractValue(ebtTags, col);
+                    const interest = extractValue(['InterestExpense', 'InterestExpenseDebt', 'InterestExpenseNet'], col) || 0;
+                    const otherNonOp = extractValue(['OtherNonoperatingIncomeExpense'], col) || 0;
+                    
+                    if (ebt !== null) {
+                        // Dodajemy koszty odsetkowe z powrotem do EBT i usuwamy szum operacyjno-finansowy
+                        effectiveEbit = (ebt + interest) - otherNonOp;
+                    } else {
+                        // Awaryjny fallback ostateczny (Gross Profit - Total Opex)
+                        const grossProfit = extractValue(['GrossProfit', 'GrossMargin'], col);
+                        const totalOpex = getTotalOperatingExpenses(col) || 0;
+                        effectiveEbit = grossProfit !== null ? grossProfit - totalOpex : null;
+                    }
+                }
 
+                // Przypisanie wyniku do odpowiedniego wiersza
+                if (def.label === 'Operating income (EBIT)') {
+                    values[col] = effectiveEbit;
+                } else {
+                    const depreciation = extractValue(['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization', 'Depreciation'], col) || 0;
+                    values[col] = effectiveEbit !== null ? (effectiveEbit + depreciation) : null;
+                }
+            }
+            // ręczne wyliczanie total operating expenses
+            // --- RĘCZNE WYLICZENIE TOTAL OPERATING EXPENSES ---
+            else if (def.label === 'Total operating expenses') {
+                values[col] = getTotalOperatingExpenses(col);
+            }
             // --- NOWA LOGIKA DLA KOSZTÓW I ZYSKU BRUTTO ---
             else if (def.label === 'Cost of Goods Sold') {
                 const cost = extractValue(def.tags, col);
@@ -2341,7 +2419,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarter
                     values[col] = (rev !== null) ? 0 : null;
                 }
             }
-            else if (def.label === 'Gross profit') {
+            else if (def.label === 'Gross Profit') {
                 const reportedGross = extractValue(def.tags, col);
                 if (reportedGross !== null) {
                     values[col] = reportedGross; 
@@ -2360,47 +2438,15 @@ function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarter
                     }
                 }
             }
-            // ----------------------------------------------
-
-            // 5. Ręczne wyliczanie "Zysku operacyjnego" dla firm typu Single-Step
-            else if (def.label === 'Operating income (EBIT)') {
-                const reportedOpInc = extractValue(def.tags, col);
-                if (reportedOpInc !== null) {
-                    values[col] = reportedOpInc;
-                } else {
-                    const ebtTags = METRICS_MAP.income.find(m => m.label === 'Income before income tax')?.tags || [];
-                    const ebt = extractValue(ebtTags, col);
-                    // Dla banków 'InterestExpense' to główny koszt, dodawanie go tutaj sztucznie pompuje Operating Income
-                    const interest = extractValue(['InterestExpense', 'InterestExpenseDebt', 'InterestExpenseNet'], col) || 0;
-                    
-                    if (ebt !== null) {
-                        let calculatedOpInc = ebt + interest;
-                        
-                        // ZABEZPIECZENIE: Operating income nigdy nie powinien przekroczyć przychodu (Revenue)
-                        const revTags = METRICS_MAP.income.find(m => m.label === 'Revenue')?.tags || [];
-                        const rev = extractValue(revTags, col);
-                        
-                        if (rev !== null && calculatedOpInc > rev) {
-                            // Jeśli wynik jest absurdalny (jak w bankach w czasie wysokich stóp procentowych),
-                            // zyskiem operacyjnym banku z reguły jest jego zysk przed opodatkowaniem (EBT).
-                            calculatedOpInc = ebt; 
-                        }
-                        
-                        values[col] = calculatedOpInc;
-                    } else {
-                        values[col] = null;
-                    }
-                }
-            }
             // 5b. Ręczne wyliczanie "Income before income tax" (np. dla Oracle od 2019)
-            else if (def.label === 'Income before income tax') {
+            else if (def.label === 'Earnings Before Taxes') {
                 const reportedEbt = extractValue(def.tags, col);
                 if (reportedEbt !== null) {
                     values[col] = reportedEbt;
                 } else {
                     // Jeśli firma używa własnego "extension tag", obliczamy matematycznie: Net Income + Taxes
-                    const netIncomeTags = METRICS_MAP.income.find(m => m.label === 'Net income')?.tags || [];
-                    const taxTags = METRICS_MAP.income.find(m => m.label === 'Income tax expense')?.tags || [];
+                    const netIncomeTags = METRICS_MAP.income.find(m => m.label === 'Net Income')?.tags || [];
+                    const taxTags = METRICS_MAP.income.find(m => m.label === 'Provision for Taxes')?.tags || [];
                     
                     const netInc = extractValue(netIncomeTags, col);
                     const taxes = extractValue(taxTags, col);
@@ -2463,7 +2509,7 @@ function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarter
                     }
                 }
             }
-            // 7. Total non-current liabilities
+            
             // 7. Total non-current liabilities
             else if (def.label === 'Total Non-Current Liabilities') {
                 const reportedNonCurrentLiab = extractValue(def.tags, col);
@@ -2506,6 +2552,10 @@ function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarter
                     values[col] = null;
                 }
             }
+            // --- NOWY BLOK DLA RESEARCH AND DEVELOPMENT ---
+            else if (def.label === 'Research and development') {
+                    values[col] = getResearchAndDevelopment(col);
+                }
             // 7. Standardowe zyski i przychody bazowe
             else {
                 values[col] = extractValue(def.tags, col);
@@ -2514,6 +2564,21 @@ function processSecData(metricsDef: MetricDef[], columns: string[], forceQuarter
         
         const finalFormat = def.format === 'missing_price' ? (def.label === 'Dividend Yield' ? 'percent' : 'ratio') : (def.format || 'currency');
         result.push({ label: def.label, style: def.style, format: finalFormat, values });
+    }
+
+
+    const sgaRow = result.find(r => r.label === 'Sales, general and administrative');
+    if (sgaRow) {
+        // Sprawdzamy, czy w którymkolwiek roku/kwartale występuje wartość różna od null
+        const hasSgaData = Object.values(sgaRow.values).some(v => v !== null && v !== undefined);
+
+        if (hasSgaData) {
+            // Mamy zbiorcze SG&A -> ukrywamy rozbite podkategorie
+            return result.filter(r => r.label !== 'General and administrative' && r.label !== 'Sales and marketing');
+        } else {
+            // SG&A jest puste -> ukrywamy zbiorcze SG&A i wyświetlamy dwie podkategorie
+            return result.filter(r => r.label !== 'Sales, general and administrative');
+        }
     }
 
     return result;
@@ -2970,10 +3035,10 @@ function renderChart(tableData: any[], columns: string[]) {
         else if (currentTab === 'income') {
             datasets = [
                 { label: 'Revenue', data: getRowValues('Revenue'), backgroundColor: '#448AFF', borderRadius: 2 },
-                { label: 'Gross profit', data: getRowValues('Gross profit'), backgroundColor: '#4DD0E1', borderRadius: 2 },
+                { label: 'Gross Profit', data: getRowValues('Gross Profit'), backgroundColor: '#4DD0E1', borderRadius: 2 },
                 { label: 'Operating income (EBIT)', data: getRowValues('Operating income (EBIT)'), backgroundColor: '#F57F17', borderRadius: 2 },
-                { label: 'Income before tax', data: getRowValues('Income before income tax'), backgroundColor: '#B388FF', borderRadius: 2 },
-                { label: 'Net income', data: getRowValues('Net income'), backgroundColor: '#FBC02D', borderRadius: 2 }
+                { label: 'Earnings Before Taxes', data: getRowValues('Earnings Before Taxes'), backgroundColor: '#B388FF', borderRadius: 2 },
+                { label: 'Net Income', data: getRowValues('Net Income'), backgroundColor: '#FBC02D', borderRadius: 2 }
             ];
         } 
         else if (currentTab === 'balance') {
@@ -3670,7 +3735,7 @@ function calculateIndicators(columns: string[]): CalculatedIndicatorsResult {
     // =========================================================================
     const rowsAssetUtil = {
         assetTurnover: makeRow('Asset Turnover', 'ratio'),
-        ppeTurnover: makeRow('PPE Turnover', 'ratio'),
+        ppeTurnover: makeRow('PPE Turnover (Capital Asset Turnover)', 'ratio'),
         cashTurnover: makeRow('Cash Turnover', 'ratio'),
         cashDays: makeRow('Cash Days', 'decimal'),
         arTurnover: makeRow('A/R Turnover', 'ratio'),
@@ -3731,23 +3796,30 @@ function calculateIndicators(columns: string[]): CalculatedIndicatorsResult {
         // --- DANE Z RACHUNKU ZYSKÓW I STRAT (Dla danego okresu) ---
         const revenue = getVal(incomeData, 'Revenue', col);
         const cogs = getVal(incomeData, 'Cost of Goods Sold', col);
-        const grossProfit = getVal(incomeData, 'Gross profit', col);
+        const grossProfit = getVal(incomeData, 'Gross Profit', col);
         const rd = getVal(incomeData, 'Research and development', col);
-        const sga = getVal(incomeData, 'Sales, general and administrative', col);
+
+        // ZMIANA: Jeśli brakuje głównego SG&A, sumujemy G&A oraz Sales & Marketing
+        const rawSga = getVal(incomeData, 'Sales, general and administrative', col);
+        const ga = getVal(incomeData, 'General and administrative', col);
+        const sm = getVal(incomeData, 'Sales and marketing', col);
+        const sga = rawSga !== null ? rawSga : ((ga !== null || sm !== null) ? (ga ?? 0) + (sm ?? 0) : null);
+
+
         const totalOpex = getVal(incomeData, 'Total operating expenses', col);
         const ebit = getVal(incomeData, 'Operating income (EBIT)', col);
-        const otherNonOp = getVal(incomeData, 'Other income, net', col);
-        const ebt = getVal(incomeData, 'Income before income tax', col);
-        const tax = getVal(incomeData, 'Income tax expense', col);
-        const netIncome = getVal(incomeData, 'Net income', col);
+        const otherNonOp = getVal(incomeData, 'Other income / expense, net', col);
+        const ebt = getVal(incomeData, 'Earnings Before Taxes', col);
+        const tax = getVal(incomeData, 'Provision for Taxes', col);
+        const netIncome = getVal(incomeData, 'Net Income', col);
 
         // --- DANE TTM (Do wskaźników łączących RZiS z Bilansem w trybie kwartalnym) ---
         const ttmRevenue = getFlowTTM(incomeData, 'Revenue', i) ?? revenue;
         const ttmCogs = getFlowTTM(incomeData, 'Cost of Goods Sold', i) ?? cogs;
         const ttmEbit = getFlowTTM(incomeData, 'Operating income (EBIT)', i) ?? ebit;
-        const ttmEbt = getFlowTTM(incomeData, 'Income before income tax', i) ?? ebt;
-        const ttmTax = getFlowTTM(incomeData, 'Income tax expense', i) ?? tax;
-        const ttmNetIncome = getFlowTTM(incomeData, 'Net income', i) ?? netIncome;
+        const ttmEbt = getFlowTTM(incomeData, 'Earnings Before Taxes', i) ?? ebt;
+        const ttmTax = getFlowTTM(incomeData, 'Provision for Taxes', i) ?? tax;
+        const ttmNetIncome = getFlowTTM(incomeData, 'Net Income', i) ?? netIncome;
         const ttmDepr = getFlowTTM(cashflowData, 'Depreciation', i);
 
         // --- DANE Z CASH FLOW I ODSETKI ---

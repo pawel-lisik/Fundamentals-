@@ -327,7 +327,7 @@ h1 { font-size: 20px; margin: 0; }
 
 /* Nagłówki sekcji (np. Operating expenses) */
 .row-header-text {
-    font-weight: normal;
+    font-weight: bold !important;
     color: var(--text-primary);
 }
 
@@ -339,9 +339,10 @@ h1 { font-size: 20px; margin: 0; }
 
 /* Wiersze z podsumowaniem (np. Gross profit, Net income) */
 .row-total {
-    font-weight: bold;
+    font-weight: bold !important;
 }
 .row-total td {
+    font-weight: bold !important;
     border-top: 1px solid var(--table-border); /* Czarna linia nad sumą, kluczowy element wizualny ze zrzutu ekranu */
 }
 
