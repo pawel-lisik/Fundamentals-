@@ -1,20 +1,22 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import { fetchAndSyncVisaEps } from './fallbackScraper';
+import * as cheerio from 'cheerio';
+
 // --- INICJALIZACJA YAHOO FINANCE 2 (POPRAWIONA) ---
 const yfModule = require('yahoo-finance2');
 const YahooFinanceClass = yfModule.default || yfModule;
 const yahooFinance = new YahooFinanceClass();
 
 
-import { exec } from 'child_process';
-import { promisify } from 'util';
-const execPromise = promisify(exec);
+
+
 
 function createWindow() {
     const mainWindow = new BrowserWindow({
         width: 1280,
         height: 800,
+        icon: path.join(__dirname, '../../build/icon.png'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -561,28 +563,44 @@ ipcMain.handle('get-finviz-data', async (event, ticker: string) => {
 
 ipcMain.handle('get-finviz-data', async (event, ticker: string) => {
     try {
-        let command = '';
+        // Natywne żądanie fetch bezpośrednio do Finviz (z odpowiednim User-Agentem, żeby nas nie zablokowali)
+        const response = await fetch(`https://finviz.com/quote.ashx?t=${ticker}`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5'
+            }
+        });
 
-        if (app.isPackaged) {
-            // TRYB PRODUKCYJNY (Spakowana aplikacja)
-            // Używamy process.resourcesPath, który wskazuje na ukryte zasoby aplikacji
-            const execName = process.platform === 'win32' ? 'finviz_script.exe' : 'finviz_script';
-            const binPath = path.join(process.resourcesPath, 'bin', execName);
-            
-            // W trybie produkcyjnym nie wywołujemy "python3", tylko bezpośrednio nasz skompilowany plik
-            command = `"${binPath}" ${ticker}`;
-        } else {
-            // TRYB DEWELOPERSKI (npm start)
-            const pythonPath = '/Library/Frameworks/Python.framework/Versions/3.14/bin/python3';
-            const scriptPath = path.join(__dirname, '../finviz_script.py'); 
-            
-            command = `"${pythonPath}" "${scriptPath}" ${ticker}`;
+        if (!response.ok) {
+            throw new Error(`Finviz HTTP Error: ${response.status}`);
         }
 
-        const { stdout } = await execPromise(command);
-        return JSON.parse(stdout.trim());
+        const html = await response.text();
+        const $ = cheerio.load(html);
+        
+        const result: Record<string, string> = {
+            "PEG": "Brak",
+            "EPS next 5Y": "Brak",
+            "EPS past 5Y": "Brak",
+            "EPS this Y": "Brak"
+        };
+
+        // Finviz trzyma te dane w tabeli o klasie .snapshot-table2
+        // Przeszukujemy wszystkie komórki <td> i łapiemy wartość z komórki obok
+        $('.snapshot-table2 td').each((i, el) => {
+            const text = $(el).text().trim();
+            if (Object.keys(result).includes(text)) {
+                // Wartość znajduje się w następnym tagu <td>
+                const val = $(el).next('td').text().trim();
+                result[text] = val !== '-' ? val : 'Brak';
+            }
+        });
+
+        return result;
+
     } catch (error: any) {
-        console.error(`Błąd podczas pobierania danych z Finviz dla ${ticker}:`, error);
-        return { error: error.message || 'Nieznany błąd skryptu Finviz' };
+        console.error(`Błąd Cheerio przy pobieraniu Finviz dla ${ticker}:`, error.message);
+        return { error: error.message || 'Nieznany błąd Finviz' };
     }
 });

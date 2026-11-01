@@ -1,6 +1,5 @@
 node_modules/
 dist/
 bin/
-build/
 release/
 finviz_script.spec
