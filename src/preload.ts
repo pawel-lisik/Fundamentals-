@@ -14,4 +14,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSplits: (ticker:string) => ipcRenderer.invoke('getSplits', ticker),
     getFallbackEps: (ticker: string) => ipcRenderer.invoke('get-fallback-eps', ticker),
     getDividends: (ticker: string) => ipcRenderer.invoke('getDividends', ticker),
+    getFinvizData: (ticker: string) => ipcRenderer.invoke('get-finviz-data', ticker),
 });

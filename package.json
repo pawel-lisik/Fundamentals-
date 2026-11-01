@@ -7,12 +7,40 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
-    "start": "npm run build && electron ."
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.pawellisik.fundamentals",
+    "productName": "Fundamentals",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "public/**/*",
+      "styles.css",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.finance"
+    },
+    "npmRebuild": false,
+    "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin",
+        "filter": ["**/*"]
+      }
+    ]
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.2.13",
     "@types/node": "^22.0.0",
     "@types/sqlite3": "^3.1.11",
     "electron": "^44.3.0",
+    "electron-builder": "^24.13.3",
     "typescript": "^5.5.0"
   },
   "dependencies": {
@@ -20,5 +48,8 @@
     "sqlite": "^5.1.1",
     "sqlite3": "^6.0.1",
     "yahoo-finance2": "^4.0.2"
+  },
+  "allowScripts": {
+    "sqlite3": true
   }
 }

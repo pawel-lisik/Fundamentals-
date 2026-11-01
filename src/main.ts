@@ -7,6 +7,10 @@ const YahooFinanceClass = yfModule.default || yfModule;
 const yahooFinance = new YahooFinanceClass();
 
 
+import { exec } from 'child_process';
+import { promisify } from 'util';
+const execPromise = promisify(exec);
+
 function createWindow() {
     const mainWindow = new BrowserWindow({
         width: 1280,
@@ -528,5 +532,57 @@ ipcMain.handle('getDividends', async (event, ticker) => {
     } catch (error) {
         console.error(`Błąd podczas pobierania dywidend dla ${ticker}:`, error);
         return [];
+    }
+});
+
+/* to jest wersja dla pliku .py
+ipcMain.handle('get-finviz-data', async (event, ticker: string) => {
+    try {
+        // Pełna ścieżka do Twojego środowiska Pythona
+        const pythonPath = '/Library/Frameworks/Python.framework/Versions/3.14/bin/python3';
+        
+        // Ścieżka do skryptu (dostosuj jeśli plik leży w innym miejscu)
+        const scriptPath = path.join(__dirname, '../finviz_script.py'); 
+        
+        // Wywołanie z użyciem absolutnej ścieżki
+        const { stdout } = await execPromise(`"${pythonPath}" "${scriptPath}" ${ticker}`);
+        
+        return JSON.parse(stdout.trim());
+    } catch (error) {
+        console.error(`Błąd podczas pobierania danych z Finviz dla ${ticker}:`, error);
+        return { error: 'Błąd pobierania danych' };
+    }
+});
+
+*/
+
+// Upewnij się, że masz zaimportowany obiekt app na górze pliku:
+// import { app, BrowserWindow, ipcMain } from 'electron';
+
+ipcMain.handle('get-finviz-data', async (event, ticker: string) => {
+    try {
+        let command = '';
+
+        if (app.isPackaged) {
+            // TRYB PRODUKCYJNY (Spakowana aplikacja)
+            // Używamy process.resourcesPath, który wskazuje na ukryte zasoby aplikacji
+            const execName = process.platform === 'win32' ? 'finviz_script.exe' : 'finviz_script';
+            const binPath = path.join(process.resourcesPath, 'bin', execName);
+            
+            // W trybie produkcyjnym nie wywołujemy "python3", tylko bezpośrednio nasz skompilowany plik
+            command = `"${binPath}" ${ticker}`;
+        } else {
+            // TRYB DEWELOPERSKI (npm start)
+            const pythonPath = '/Library/Frameworks/Python.framework/Versions/3.14/bin/python3';
+            const scriptPath = path.join(__dirname, '../finviz_script.py'); 
+            
+            command = `"${pythonPath}" "${scriptPath}" ${ticker}`;
+        }
+
+        const { stdout } = await execPromise(command);
+        return JSON.parse(stdout.trim());
+    } catch (error: any) {
+        console.error(`Błąd podczas pobierania danych z Finviz dla ${ticker}:`, error);
+        return { error: error.message || 'Nieznany błąd skryptu Finviz' };
     }
 });

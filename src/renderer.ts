@@ -284,7 +284,7 @@ let earningsChartInstance: any = null;
 let rawSecData: any = null;
 let fallbackEpsData: Record<string, any> | null = null;
 
-
+let currentFinvizData: any = null;
 
 
 let indChartValuation: any = null;
@@ -874,6 +874,15 @@ async function loadSecData(ticker: string) {
     const chartWrapper = document.getElementById('chart-wrapper');
     if (chartWrapper) chartWrapper.style.display = 'none';
 
+    // 1. ZRESETOJ STAN FINVIZ (aby nie pokazywało starej spółki)
+    currentFinvizData = null;
+    const finvizWrapper = document.getElementById('finviz-row-wrapper');
+    if (finvizWrapper) {
+        finvizWrapper.style.display = 'block';
+        finvizWrapper.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Pobieranie danych analitycznych (Finviz)...';
+        finvizWrapper.style.cssText = 'margin-bottom: 24px; padding: 16px; text-align: center; color: var(--text-secondary); background: var(--bg-secondary); border-radius: 8px; border: 1px dashed var(--border-color);';
+    }
+
     try {
         // POBIERANIE RÓWNOLEGŁE (Dodane getSplits)
         const [secRes, priceRes, quoteRes, newsRes, similarRes, earningsRes, splitsRes, fallbackRes, dividendsRes] = await Promise.all([
@@ -886,7 +895,7 @@ async function loadSecData(ticker: string) {
             // Używamy opcjonalnego wywołania, na wypadek gdyby API jeszcze nie istniało w main.ts
             (window as any).electronAPI.getSplits ? (window as any).electronAPI.getSplits(ticker) : Promise.resolve([]),
             (window as any).electronAPI.getFallbackEps(ticker),
-            (window as any).electronAPI.getDividends ? (window as any).electronAPI.getDividends(ticker) : Promise.resolve([])
+            (window as any).electronAPI.getDividends ? (window as any).electronAPI.getDividends(ticker) : Promise.resolve([]),
         ]);
         
         rawSecData = secRes;
@@ -907,6 +916,27 @@ async function loadSecData(ticker: string) {
         
         renderData();
         updateWatchlistButtonState();
+
+        // =========================================================================
+        // 3. LAZY LOADING FINVIZA (Uruchamiane w tle po załadowaniu głównego interfejsu)
+        // =========================================================================
+        if ((window as any).electronAPI.getFinvizData) {
+            (window as any).electronAPI.getFinvizData(ticker).then((finvizRes: any) => {
+                // Sprawdzamy czy użytkownik w międzyczasie nie zmienił spółki
+                if (currentLoadedTicker === ticker.toUpperCase()) {
+                    currentFinvizData = finvizRes;
+                    // Skoro jesteśmy w trakcie działania, a dane właśnie nadeszły -> rysujemy samą linijkę
+                    if (currentMainTab === 'earnings') {
+                        renderFinvizRow(); 
+                    }
+                }
+            }).catch((err: any) => {
+                console.error('Błąd tła Finviz:', err);
+                if (finvizWrapper && currentLoadedTicker === ticker.toUpperCase()) {
+                    finvizWrapper.innerHTML = 'Błąd pobierania danych analitycznych.';
+                }
+            });
+        }
     } catch (error) {
         alert('Wystąpił błąd podczas pobierania danych. Sprawdź konsolę.');
         console.error(error);
@@ -915,6 +945,59 @@ async function loadSecData(ticker: string) {
     }
 }
 
+function renderFinvizRow() {
+    const finvizWrapper = document.getElementById('finviz-row-wrapper');
+    if (!finvizWrapper) return;
+
+    if (currentFinvizData && !currentFinvizData.error) {
+        const getColor = (val: any) => {
+            if (!val || val === 'Brak') return 'var(--text-primary)';
+            return String(val).includes('-') ? 'var(--red, #FF5252)' : 'var(--green, #3CD859)';
+        };
+
+        // Nadpisujemy style kręcącego się loadera na styl docelowy
+        finvizWrapper.style.cssText = `
+            display: flex; 
+            gap: 24px; 
+            justify-content: space-around; 
+            background: var(--bg-secondary, rgba(150,150,150,0.05)); 
+            border: 1px solid var(--border-color, rgba(150,150,150,0.2)); 
+            padding: 16px; 
+            border-radius: 8px; 
+            margin-bottom: 24px;
+        `;
+
+        finvizWrapper.innerHTML = `
+            <div style="text-align: center; flex: 1;">
+                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">EPS next 5Y (Prognoza)</div>
+                <div style="font-size: 18px; font-weight: 600; color: ${getColor(currentFinvizData['EPS next 5Y'])};">
+                    ${currentFinvizData['EPS next 5Y'] || 'Brak'}
+                </div>
+            </div>
+            <div style="text-align: center; flex: 1; border-left: 1px solid var(--border-color, rgba(150,150,150,0.2));">
+                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">EPS past 5Y</div>
+                <div style="font-size: 18px; font-weight: 600; color: var(--text-primary);">
+                    ${currentFinvizData['EPS past 5Y'] || 'Brak'}
+                </div>
+            </div>
+            <div style="text-align: center; flex: 1; border-left: 1px solid var(--border-color, rgba(150,150,150,0.2));">
+                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">EPS this Y</div>
+                <div style="font-size: 18px; font-weight: 600; color: var(--text-primary);">
+                    ${currentFinvizData['EPS this Y'] || 'Brak'}
+                </div>
+            </div>
+            <div style="text-align: center; flex: 1; border-left: 1px solid var(--border-color, rgba(150,150,150,0.2));">
+                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">PEG Ratio</div>
+                <div style="font-size: 18px; font-weight: 600; color: var(--text-primary);">
+                    ${currentFinvizData['PEG'] || 'Brak'}
+                </div>
+            </div>
+        `;
+    } else if (currentFinvizData && currentFinvizData.error) {
+        finvizWrapper.style.cssText = 'margin-bottom: 24px; padding: 16px; text-align: center; background: rgba(255, 82, 82, 0.1); color: #FF5252; border: 1px solid rgba(255, 82, 82, 0.3); border-radius: 8px;';
+        finvizWrapper.innerHTML = `Błąd Finviz: ${currentFinvizData.error}`;
+    }
+}
 
 // Formatowanie kapitalizacji
 function formatLargeNumber(num: number | null): string {
@@ -3401,6 +3484,9 @@ function renderGenericChart(canvasId: string, label: string, dates: string[], va
 // ==========================================
 // --- MODUŁ EARNINGS (HISTORIA + PROGNOZY) ---
 // ==========================================
+// ==========================================
+// --- MODUŁ EARNINGS (HISTORIA + PROGNOZY) ---
+// ==========================================
 function renderEarnings() {
     if (!currentEarningsData) return;
 
@@ -3422,8 +3508,6 @@ function renderEarnings() {
         const aActuals: (number | null)[] = [];
         const aEstimates: (number | null)[] = [];
 
-        // ZMIANA: Szukamy ostatniego ZARAPORTOWANEGO PEŁNEGO ROKU (Annual) na podstawie danych z tabeli.
-        // Odrzucamy lata z 'null', które mają na razie tylko raporty kwartalne.
         let maxReportedAnnualYear = new Date().getFullYear() - 1;
         if (epsRow && epsRow.values) {
             const validYears = Object.keys(epsRow.values)
@@ -3437,7 +3521,6 @@ function renderEarnings() {
 
         const startYear = 2009;
         
-        // Pętla leci wyłącznie do ostatniego dostępnego pełnego roku (bez pustych dziur)
         for (let y = startYear; y <= maxReportedAnnualYear; y++) {
             const yearStr = y.toString();
             aLabels.push(yearStr);
@@ -3446,19 +3529,16 @@ function renderEarnings() {
             aEstimates.push(null);
         }
 
-        // Prognozy Yahoo
         const t0y = trendData.find((t: any) => t.period === '0y');
         const t1y = trendData.find((t: any) => t.period === '+1y');
 
         const eps0y = t0y?.earningsEstimate?.avg;
         const eps1y = t1y?.earningsEstimate?.avg;
 
-        // Szary słupek 1: Rok bieżący (0y) - automatycznie zasłania pierwszą pustą pozycję (np. 2027 dla Nvidii)
         aLabels.push((maxReportedAnnualYear + 1).toString());
         aActuals.push(null);
         aEstimates.push(eps0y != null ? eps0y : null);
 
-        // Szary słupek 2: Przyszły rok (+1y)
         aLabels.push((maxReportedAnnualYear + 2).toString());
         aActuals.push(null);
         aEstimates.push(eps1y != null ? eps1y : null);
@@ -3598,6 +3678,8 @@ function renderEarnings() {
             });
         }
     }
+
+    renderFinvizRow();
 }
 
 
