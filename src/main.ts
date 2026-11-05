@@ -582,7 +582,7 @@ ipcMain.handle('get-finviz-data', async (event, ticker: string) => {
         const result: Record<string, string> = {
             "PEG": "Brak",
             "EPS next 5Y": "Brak",
-            "EPS past 5Y": "Brak",
+            "EPS past 3/5Y": "Brak",
             "EPS this Y": "Brak"
         };
 

@@ -968,22 +968,22 @@ function renderFinvizRow() {
         `;
 
         finvizWrapper.innerHTML = `
-            <div style="text-align: center; flex: 1;">
-                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">EPS next 5Y (Prognoza)</div>
-                <div style="font-size: 18px; font-weight: 600; color: ${getColor(currentFinvizData['EPS next 5Y'])};">
-                    ${currentFinvizData['EPS next 5Y'] || 'Brak'}
-                </div>
-            </div>
-            <div style="text-align: center; flex: 1; border-left: 1px solid var(--border-color, rgba(150,150,150,0.2));">
-                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">EPS past 5Y</div>
+            <div style="text-align: center; flex: 1;);">
+                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">EPS past 3/5Y</div>
                 <div style="font-size: 18px; font-weight: 600; color: var(--text-primary);">
-                    ${currentFinvizData['EPS past 5Y'] || 'Brak'}
+                    ${currentFinvizData['EPS past 3/5Y'] || 'Brak'}
                 </div>
             </div>
             <div style="text-align: center; flex: 1; border-left: 1px solid var(--border-color, rgba(150,150,150,0.2));">
                 <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">EPS this Y</div>
                 <div style="font-size: 18px; font-weight: 600; color: var(--text-primary);">
                     ${currentFinvizData['EPS this Y'] || 'Brak'}
+                </div>
+            </div>
+            <div style="text-align: center; flex: 1;">
+                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; border-left: 1px solid var(--border-color, rgba(150,150,150,0.2)">EPS next 5Y (Prognoza)</div>
+                <div style="font-size: 18px; font-weight: 600; color: ${getColor(currentFinvizData['EPS next 5Y'])};">
+                    ${currentFinvizData['EPS next 5Y'] || 'Brak'}
                 </div>
             </div>
             <div style="text-align: center; flex: 1; border-left: 1px solid var(--border-color, rgba(150,150,150,0.2));">
@@ -3303,7 +3303,7 @@ function renderDividendHistoryTable() {
     if (!rawDividendsData || rawDividendsData.length === 0) {
         container.innerHTML = `
             <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 20px; color: var(--text-secondary);">
-                <i class="fa-solid fa-percent" style="font-size: 56px; margin-bottom: 16px; opacity: 0.2;"></i>
+                <i class="fa-solid fa-money-bills" style="font-size: 56px; margin-bottom: 16px; opacity: 0.2;"></i>
                 <h2 style="margin: 0 0 8px 0; color: var(--text-primary);">NO DIVIDENDS HISTORY</h2>
                 <p style="margin: 0; font-size: 14px;">This company does not pay dividends, or historical data is missing.</p>
             </div>
