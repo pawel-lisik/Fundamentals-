@@ -1,5 +1,6 @@
 :root {
     --bg-color: rgb(236, 236, 236);
+    --tooltip-bg: rgba(255, 255, 255, 0.9);
     --table-bg-secondary: rgb(246, 246, 246 );
     --panel-bg: #dbdbdb;
     --text-primary: #000000;

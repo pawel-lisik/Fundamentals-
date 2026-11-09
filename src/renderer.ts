@@ -72,6 +72,9 @@ const METRICS_MAP: Record<string, MetricDef[]> = {
         { label: 'Interest expense', tags: ['InterestExpenseNonoperating', 'InterestExpense'], style: 'sub' },
         { label: 'Other income / expense, net', tags: ['OtherNonoperatingIncomeExpense', 'NonoperatingIncomeExpense'], style: 'sub' },
         
+        // us-gaap:EquitySecuritiesFvNi
+        // total marketable securities: 	us-gaap:InvestmentsFairValueDisclosure
+        // adjustment cash flow:   us-gaap:DebtAndEquitySecuritiesGainLoss
         
         { label: 'Earnings Before Taxes', 
             tags: [
@@ -1029,8 +1032,11 @@ function formatRecommendation(key: string | null): { text: string; color: string
 }
 
 // === FUNKCJE POMOCNICZE DLA INDICATORS ===
+// === FUNKCJE POMOCNICZE DLA INDICATORS ===
 function generateTableHTML(data: any[], columns: string[]) {
+    // Dodano getRatioTooltipCSS() na początku wrappera tabeli
     let html = `<div class="ind-table-wrapper" style="width: 100%; overflow-x: auto; margin-bottom: 8px;">
+        ${getRatioTooltipCSS()}
         <table class="tv-table" style="margin-bottom: 0; width: 100%;">
         <thead>
             <tr>
@@ -1057,6 +1063,12 @@ function generateTableHTML(data: any[], columns: string[]) {
         let tdClass = 'sticky-col';
         if (row.style === 'sub') tdClass += ' row-sub';
 
+        // --- DODANO: Generowanie etykiety z tooltipem ---
+        const formulaHtml = getFormulaTooltip(row.label);
+        const labelHtml = formulaHtml 
+            ? `<div class="ratio-tooltip-container">${row.label}${formulaHtml}</div>` 
+            : row.label;
+
         // --- 1. Wyznaczenie MIN i MAX dla bieżącego wiersza ---
         const validVals = columns
             .map(col => row.values[col])
@@ -1065,7 +1077,7 @@ function generateTableHTML(data: any[], columns: string[]) {
         const minVal = validVals.length > 0 ? Math.min(...validVals) : 0;
         const maxVal = validVals.length > 0 ? Math.max(...validVals) : 0;
 
-        html += `<tr class="${trClass}"><td class="${tdClass}">${row.label}</td>`;
+        html += `<tr class="${trClass}"><td class="${tdClass}">${labelHtml}</td>`; // ZMIANA Z ${row.label} NA ${labelHtml}
 
         columns.forEach(col => {
             const val = row.values[col];
@@ -1085,9 +1097,6 @@ function generateTableHTML(data: any[], columns: string[]) {
                 const lightness = Math.round(88 - (ratio * 30)); // 88% (jasny) -> 58% (ciemny)
                 cellStyle = `background-color: hsl(213, 65%, ${lightness}%); color: #0f172a; font-weight: 500;`;
                 
-                // Wariant B (Dla ciemnego motywu z białą czcionką - od jaśniejszego niebieskiego 42% do ciemnego granatu 18%):
-                // const lightness = Math.round(42 - (ratio * 24)); // 42% (jaśniejszy) -> 18% (ciemniejszy)
-                // cellStyle = `background-color: hsl(215, 55%, ${lightness}%); color: #ffffff;`;
                 }
 
             } else {
@@ -2672,7 +2681,9 @@ function renderCleanTable(data: any[], columns: string[]) {
     const container = document.getElementById('table-container');
     if (!container) return;
 
-    let html = `<table class="tv-table">
+    // Dodano getRatioTooltipCSS() przed tagiem table
+    let html = `${getRatioTooltipCSS()}
+        <table class="tv-table">
         <thead>
             <tr>
                 <th class="sticky-col"></th>
@@ -2693,7 +2704,13 @@ function renderCleanTable(data: any[], columns: string[]) {
         if (row.style === 'sub') tdClass += ' row-sub';
         if (row.style === 'header') tdClass += ' row-header-text';
 
-        html += `<tr class="${trClass}"><td class="${tdClass}">${row.label}</td>`;
+        // --- DODANO: Generowanie etykiety z tooltipem ---
+        const formulaHtml = getFormulaTooltip(row.label);
+        const labelHtml = (row.style !== 'header' && formulaHtml) 
+            ? `<div class="ratio-tooltip-container">${row.label}${formulaHtml}</div>` 
+            : row.label;
+
+        html += `<tr class="${trClass}"><td class="${tdClass}">${labelHtml}</td>`; // ZMIANA NA labelHtml
         
         columns.forEach(col => {
             if (row.style === 'header') {
@@ -4094,4 +4111,151 @@ function calculateIndicators(columns: string[]): CalculatedIndicatorsResult {
             ...growth
         ]
     };
+}
+
+
+// tooltips 
+
+// === FUNKCJE POMOCNICZE DLA TOOLTIPÓW ZE WZORAMI ===
+
+function getRatioTooltipCSS(): string {
+    return `
+    <style>
+        .tv-table td.sticky-col:hover {
+            z-index: 9999 !important;
+        }
+        .ratio-tooltip-container {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+            line-height: 1.2;
+        }
+        .ratio-tooltip-container .custom-ratio-tooltip {
+            display: none;
+            position: absolute;
+            left: 105%;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--tooltip-bg);
+            border: 1px solid var(--border-color, #2a2e39);
+            padding: 8px 12px;
+            border-radius: 6px;
+            z-index: 9999;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            pointer-events: none;
+            white-space: nowrap;
+            color: var(--text-primary, #d1d4dc);
+        }
+        .ratio-tooltip-container:hover .custom-ratio-tooltip {
+            display: flex;
+        }
+        .ratio-fraction {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            color: var(--text-primary);
+        }
+        .ratio-fraction-num {
+            border-bottom: 1px solid var(--text-primary, #d1d4dc);
+            padding: 0 6px 4px 6px;
+        }
+        .ratio-fraction-den {
+            padding: 4px 6px 0 6px;
+        }
+    </style>
+    `;
+}
+
+// OPISY WSKAZNIKOW 
+const one = 'the higher the percentage, the better';
+const two = 'the lower the percentage, the better';
+const three = 'the larger, the better';
+const four = 'Generally, a low number is better, but cash days are driven by industry factors';
+const five = 'Generally, the higher the A/R turnover or lower the A/R days, the better, but industries offer different standard credit terms';
+const six = 'Higher inventory turnover or lower inventory days is generally better, but it is business-dependent';
+const seven = 'Generally, the higher the A/P turnover or lower A/P days, the better because it indicates high creditworthiness';
+const leverage = 'Generally, the smaller the number, the better. There is typically an optimal capital structure based on industry.';
+
+const ebitdaDebt = 'A high debt to EBITDA ratio may indicate higher financial risk. A lower ratio suggest better debt repayment capacity and lower risk.';
+
+const ebitdaInterest = 'Generally, the higher the number, the better, but there are different benchmarks for different industries.';
+
+
+
+function getFormulaTooltip(label: string): string {
+    const formulas: Record<string, { num?: string, den?: string, text?: string, description?: string }> = {
+        'Return on Equity': { num: 'Net Income', den: 'Average Equity', description: one},
+        'Return on Assets': { num: 'Net Income', den: 'Average Assets', description: one },
+        'Return on Net Assets': { num: 'Net Income', den: 'Net Assets', description: one },
+        'Return on Invested Capital': { num: 'NOPAT', den: 'Average Invested Capital', description: one },
+        'Gross Margin': { num: 'Gross Profit', den: 'Revenue', description: one },
+        'SG&A % of Revenue': { num: 'SG&A', den: 'Revenue', description: two },
+        'Other Operating Expenses % of Revenue': { num: 'Other Operating Expenses', den: 'Revenue', description: two },
+        'EBITDA Margin': { num: 'EBITDA', den: 'Revenue', description: one },
+        'Depreciation % of Revenue': { num: 'Depreciation', den: 'Revenue', description: two },
+        'EBIT Margin': { num: 'EBIT', den: 'Revenue', description: one },
+        'Other Non Operating Expense % of Revenue': { num: 'Other Non-Op Expense', den: 'Revenue', description: two },
+        'EBT Margin': { num: 'EBT', den: 'Revenue', description: one },
+        'Tax % of Revenue': { num: 'Tax', den: 'Revenue', description: two },
+        'Net Profit Margin': { num: 'Net Income', den: 'Revenue', description: one },
+        'Effective Tax Rate': { num: 'Tax', den: 'EBT' },
+        'Tax Burden': { num: 'Net Income', den: 'EBT' },
+        'Effective Interest Rate': { num: 'Interest Expense', den: 'Total Interest Bearing Liab.' },
+        'Interest Burden': { num: 'EBT', den: 'EBIT' },
+
+        'Asset Turnover': { num: 'Revenue', den: 'Total Assets', description: three },
+        'PPE Turnover (Capital Asset Turnover)': { num: 'Revenue', den: 'PPE Net', description: three },
+        'Cash Turnover': { num: 'Revenue', den: 'Cash', description: four },
+        'Cash Days': { num: 'Cash × 365', den: 'Revenue', description: four },
+        'A/R Turnover': { num: 'Revenue', den: 'Accounts Receivable', description: five },
+        'A/R Days': { num: 'Accounts Receivable × 365', den: 'Revenue', description: five },
+        'Inventory Turnover': { num: 'COGS', den: 'Inventory' },
+        'Inventory Days': { num: 'Inventory × 365', den: 'COGS' },
+        'A/P Turnover': { num: 'COGS', den: 'Accounts Payable' },
+        'A/P Days': { num: 'Accounts Payable × 365', den: 'COGS' },
+        'Cash Conversion Cycle / WC Funding Gap': { text: 'A/R Days + Inventory Days - A/P Days' },
+
+        'Total Asset to Equity': { num: 'Total Assets', den: 'Equity' },
+        'Total Liabilities to Equity': { num: 'Total Liabilities', den: 'Equity' },
+        'Debt to Equity': { num: 'Total Interest Bearing Liab.', den: 'Equity' },
+        'Debt to EBITDA': { num: 'Total Interest Bearing Liab.', den: 'EBITDA' },
+        'Net Debt to EBITDA': { num: 'Net Debt', den: 'EBITDA' },
+
+        'Current': { num: 'Current Assets', den: 'Current Liabilities' },
+        'Quick': { num: 'Current Assets - Inventory', den: 'Current Liabilities' },
+        'Interest Coverage': { num: 'EBITDA', den: 'Interest Expense' },
+
+        'P/E Ratio': { num: 'Price', den: 'EPS' },
+        'P/BV Ratio': { num: 'Price', den: 'Book Value per Share' },
+        'Dividend Yield': { num: 'Dividend per Share', den: 'Price' },
+        'Payout Ratio': { num: 'Dividends Paid', den: 'Net Income' },
+        
+        'Degree of Operating Leverage': { num: '% Δ in EBIT', den: '% Δ in Revenue' },
+        'Degree of Financial Leverage': { num: '% Δ in Net Income', den: '% Δ in EBIT' },
+        'Degree of Total Leverage': { num: '% Δ in Net Income', den: '% Δ in Revenue' }
+    };
+
+    const formula = formulas[label];
+    if (!formula) return ''; // Zwraca puste jeśli brak wzoru w słowniku
+
+    let innerHtml = '';
+    if (formula.den) {
+        innerHtml = `
+            <div style="display: flex; flex-direction: row; align-items: center; justify-content: center;">
+                <div class="ratio-fraction">
+                    <span class="ratio-fraction-num">${formula.num}</span>
+                    <span class="ratio-fraction-den">${formula.den}</span>
+                </div>
+                <div>
+                    <p>${formula.description}</p>
+                </div>
+            </div>
+        `;
+    } else if (formula.text) {
+        innerHtml = `<div style="font-family: 'Courier New', monospace; font-size: 11px; font-weight: 600;">${formula.text}</div>`;
+    }
+
+    return `<div class="custom-ratio-tooltip">${innerHtml}</div>`;
 }
