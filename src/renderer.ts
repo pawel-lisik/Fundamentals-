@@ -279,6 +279,8 @@ let currentMainTab: 'overview' | 'statements' | 'indicators' | 'dividends' | 'ma
 let currentTab: 'income' | 'balance' | 'cashflow' = 'income'; // Podzakładka aktywna tylko w statements
 let currentPeriod: 'annual' | 'quarterly' = 'annual';
 
+let isDupontViewActive = false;
+
 let currentEarningsData: any = null;
 let annualEarningsChartInstance: any = null;
 let quarterlyEarningsChartInstance: any = null;
@@ -351,6 +353,35 @@ function updateWatchlistButtonState() {
 // Podpięcie logiki dla GŁÓWNYCH zakładek
 // ZBIORCZA INICJALIZACJA INTERFEJSU (Zastępuje stare, luźne event listenery)
 document.addEventListener('DOMContentLoaded', () => {
+
+
+    const toggleWatchlistBtn = document.getElementById('hide-watchlist-btn') ?? document.getElementById('toggle-watchlist-btn');
+
+
+    // --- NOWE: Obsługa przycisku Piramidy DuPont ---
+    const dupontBtn = document.getElementById('show-dupont-piramid');
+    if (dupontBtn) {
+        dupontBtn.addEventListener('click', () => {
+            isDupontViewActive = !isDupontViewActive;
+            document.body.classList.add('sidebar-hidden');
+            if (isDupontViewActive) {
+                dupontBtn.style.color = 'var(--text-primary)';
+                dupontBtn.innerHTML = '<i class="fa-solid fa-list"></i>'; // Zmiana na ikonę listy (aby wrócić)
+                dupontBtn.title = 'Wróć do standardowej listy wskaźników';
+                if (toggleWatchlistBtn) {
+                    toggleWatchlistBtn.style.display = 'none';
+                }
+            } else {
+                dupontBtn.style.color = 'var(--text-secondary)';
+                dupontBtn.innerHTML = '<i class="fa-solid fa-play fa-rotate-270"></i>';
+                dupontBtn.title = 'Otwórz piramidę Dupont';
+                if (toggleWatchlistBtn) {
+                    toggleWatchlistBtn.style.display = 'block';
+                }
+            }
+            if (rawSecData) renderData();
+        });
+    }
     
     // 1. Główne zakładki (Statements, Indicators, Dividends)
 
@@ -485,7 +516,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
 
-    document.getElementById('hide-watchlist-btn')?.addEventListener('click', () => {
+    toggleWatchlistBtn?.addEventListener('click', () => {
     // Przełączamy jedną klasę na głównym rodzicu (np. body lub wrapperze)
     document.body.classList.toggle('sidebar-hidden');
     });
@@ -1225,6 +1256,12 @@ function renderData() {
     const periodToggle = document.getElementById('period-toggle-btn')!;
     const dividendTableContainer = document.getElementById('dividend-table-container')!;
 
+    // --- NOWE: Sterowanie widocznością przycisku piramidy ---
+    const dupontBtn = document.getElementById('show-dupont-piramid');
+    if (dupontBtn) {
+        dupontBtn.style.display = currentMainTab === 'indicators' ? 'flex' : 'none';
+    }
+
     if (currentMainTab === 'dividends') {
         dividendTableContainer.style.display = 'block';
     } else {
@@ -1640,6 +1677,193 @@ function renderData() {
         
         // 2. Wszystkie pozostałe wskaźniki z wyodrębnionej funkcji calculateIndicators
         const calcInd = calculateIndicators(columns);
+
+        // --- DODANY BLOK PIRAMIDY DUPONT ---
+// =====================================================================
+        // WIDOK 5-STEP DUPONT PYRAMID (DOKŁADNE ODWZOROWANIE Z EXCELA I DOPASOWANIE DO EKRANU)
+        // =====================================================================
+        if (isDupontViewActive) {
+            // Wymuszamy 8 ostatnich okresów dla czytelności piramidy
+            const dupontColumns = displayColumns.slice(-7);
+
+            const getRows = (source: any[], labels: string[]) => labels.map(l => source.find(r => r.label === l)).filter(Boolean);
+
+            // Główne wskaźniki na górze
+            const roe = getRows(calcInd.profitability, ['Return on Equity']);
+            
+            // Poziom 2
+            const netMargin = getRows(calcInd.profitability, ['Net Profit Margin']);
+            const levEquity = getRows(calcInd.leverage, ['Total Asset to Equity']);
+            const assetTurn = getRows(calcInd.assetUtilization, ['Asset Turnover']);
+
+            // Kolumna A: Net Profit Margin (Rozbita na podkolumny 1 i 2)
+            const ebtMargin = getRows(calcInd.profitability, ['EBT Margin']);
+            const taxRev = getRows(calcInd.profitability, ['Tax % of Revenue']);
+            const ebitMargin = getRows(calcInd.profitability, ['EBIT Margin']);
+            const otherNonOp = getRows(calcInd.profitability, ['Other Non Operating Expense % of Revenue']);
+            const ebitdaMargin = getRows(calcInd.profitability, ['EBITDA Margin']);
+            const deprRev = getRows(calcInd.profitability, ['Depreciation % of Revenue']);
+            const grossMargin = getRows(calcInd.profitability, ['Gross Margin']);
+            const otherOpex = getRows(calcInd.profitability, ['Other Operating Expenses % of Revenue']);
+            const sgaRev = getRows(calcInd.profitability, ['SG&A % of Revenue']);
+
+            // Kolumna C: Asset Turnover (Prawa)
+            const cashTurn = getRows(calcInd.assetUtilization, ['Cash Turnover']);
+            const arTurn = getRows(calcInd.assetUtilization, ['A/R Turnover']);
+            const invTurn = getRows(calcInd.assetUtilization, ['Inventory Turnover']);
+            const ppeTurn = getRows(calcInd.assetUtilization, ['PPE Turnover (Capital Asset Turnover)']);
+
+            // Dolne bloki analityczne
+            const grow = getRows(calcInd.growth, ['Revenue Growth', 'EBITDA Growth', 'EBIT Growth', 'Net Income Growth', 'Total Asset Growth', 'Degree of Total Leverage', 'Degree of Operating Leverage', 'Degree of Financial Leverage']);
+            const wc = getRows(calcInd.assetUtilization, ['Cash Days', 'A/R Days', 'Inventory Days', 'A/P Days', 'Cash Conversion Cycle / WC Funding Gap']);
+            const levBottom = getRows(calcInd.leverage, ['Debt to Equity', 'Debt to EBITDA']).concat(getRows(calcInd.liquidity, ['Current', 'Quick', 'Interest Coverage']));
+
+            // Funkcja pomocnicza do tworzenia pojedynczego boxa z tabelą
+            const makeBox = (title: string, content: string, titleColor: string = 'var(--text-primary)', hideTitle: boolean = false) => {
+                const header = hideTitle ? '' : `<div style="padding: 3px 6px; font-weight: 600; text-align: center; color: ${titleColor}; font-size: 10px; border-bottom: 1px dashed var(--border-color); text-transform: uppercase;">${title}</div>`;
+                
+                // Agresywne usuwanie przewijania z pojedynczych tabelek
+                const cleanContent = content
+                    .replace(/overflow-x:\s*auto;?/g, 'overflow-x: hidden;')
+                    .replace(/margin-bottom:\s*8px;?/g, 'margin-bottom: 0;');
+
+                return `
+                <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden; display: flex; flex-direction: column;">
+                    ${header}
+                    <div style="flex: 1; display: flex; flex-direction: column; justify-content: top; padding: 1px;">
+                        ${cleanContent}
+                    </div>
+                </div>`;
+            };
+
+            tableContainer.innerHTML = `
+                <style>
+                    /* Ekstremalna kompresja CSS wymuszająca zmieszczenie piramidy w oknie aplikacji */
+                    .dupont-wrapper {
+                        width: 100%;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 6px;
+                        box-sizing: border-box;
+                        /* Electron korzysta z Chromium, więc zoom zadziała idealnie redukując wymiary całego węzła */
+                        zoom: 0.85; 
+                    }
+                    .dupont-wrapper .tv-table {
+                        width: 100%;
+                        margin: 0 !important;
+                        table-layout: fixed; /* Zmusza 8 kolumn do równego podziału reszty miejsca */
+                    }
+                    .dupont-wrapper .tv-table th,
+                    .dupont-wrapper .tv-table td {
+                        padding: 2px !important;
+                        font-size: 9px !important;
+                        text-align: center !important;
+                        letter-spacing: -0.3px;
+                        white-space: nowrap;
+                    }
+                    /* Pierwsza kolumna z nazwami wskaźników */
+                    .dupont-wrapper .tv-table td.sticky-col,
+                    .dupont-wrapper .tv-table th.sticky-col {
+                        width: 90px !important;
+                        min-width: 90px !important;
+                        max-width: 90px !important;
+                        white-space: normal !important; /* Łamanie wierszy, żeby oszczędzić szerokość */
+                        text-align: left !important;
+                        line-height: 1.1 !important;
+                        padding-left: 4px !important;
+                        word-wrap: break-word;
+                    }
+                    /* Ukrywamy formatowanie tekstu "Wymaga ceny", aby oszczędzić miejsce */
+                    .dupont-wrapper .tv-table span {
+                        font-size: 8px !important;
+                    }
+                </style>
+
+                <div class="dupont-wrapper">
+                    
+                    <!-- SZCZYT: ROE -->
+                    <div style="align-self: center; width: 100%; max-width: 400px; margin-bottom: 2px;">
+                        ${makeBox('Return on Equity', generateTableHTML(roe, dupontColumns), '#FFB300', true)}
+                    </div>
+                    
+                    <!-- KRESKI ŁĄCZĄCE (Wizualizacja zależności) -->
+                    <div style="display: flex; justify-content: center; width: 100%; margin-bottom: 4px;">
+                        <div style="width: 58%; display: flex; justify-content: space-between; border-top: 1px dashed var(--border-color); height: 12px;">
+                            <div style="border-left: 1px dashed var(--border-color); height: 100%;"></div>
+                            <div style="border-left: 1px dashed var(--border-color); height: 100%;"></div>
+                            <div style="border-right: 1px dashed var(--border-color); height: 100%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- POZIOM 1: Trzy główne filary ROE -->
+                    <!-- flex: 2 dla lewej strony odpowiada za to, że mieszczą się tam idealnie 2 tabele -->
+                    <div style="display: flex; width: 100%; gap: 6px; align-items: stretch;">
+                        
+                        <!-- A) LEWA KOLUMNA: Net Profit Margin -->
+                        <div style="flex: 2; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                            <div style="width: 100%; max-width: calc(50% - 2px);">
+                                ${makeBox('Net Profit Margin', generateTableHTML(netMargin, dupontColumns), 'var(--text-primary)', true)}
+                            </div>
+                            <div style="height: 8px; border-left: 1px dashed var(--border-color);"></div>
+                            
+                            <!-- Rozbicie Net Profit Margin na EBT / Podatki itd. -->
+                            <div style="display: flex; width: 100%; gap: 4px;">
+                                <div style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+                                    ${makeBox('EBT Margin', generateTableHTML(ebtMargin, dupontColumns), 'var(--text-primary)', true)}
+                                    ${makeBox('EBIT Margin', generateTableHTML(ebitMargin, dupontColumns), 'var(--text-primary)', true)}
+                                    ${makeBox('EBITDA Margin', generateTableHTML(ebitdaMargin, dupontColumns), 'var(--text-primary)', true)}
+                                    ${makeBox('Gross Margin', generateTableHTML(grossMargin, dupontColumns), 'var(--text-primary)', true)}
+                                </div>
+                                <div style="flex: 1; display: flex; flex-direction: column; justify-content: flex-start; gap: 2px;">
+                                    ${makeBox('Tax % of Revenue', generateTableHTML(taxRev, dupontColumns), 'var(--text-primary)', true)}
+                                    ${makeBox('Other Non Operating Expense % of Revenue', generateTableHTML(otherNonOp, dupontColumns), 'var(--text-primary)', true)}
+                                    ${makeBox('Depreciation % of Revenue', generateTableHTML(deprRev, dupontColumns), 'var(--text-primary)', true)}
+                                    ${makeBox('Other Operating Expenses % of Revenue', generateTableHTML(otherOpex, dupontColumns), 'var(--text-primary)', true)}
+                                    ${makeBox('SG&A % of Revenue', generateTableHTML(sgaRev, dupontColumns), 'var(--text-primary)', true)}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- B) ŚRODKOWA KOLUMNA: Total Asset to Equity -->
+                        <div style="flex: 1; display: flex; flex-direction: column; align-items: center;">
+                            ${makeBox('Total Asset to Equity', generateTableHTML(levEquity, dupontColumns), 'var(--text-primary)', true)}
+                        </div>
+
+                        <!-- C) PRAWA KOLUMNA: Asset Turnover -->
+                        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                            ${makeBox('Asset Turnover', generateTableHTML(assetTurn, dupontColumns), 'var(--text-primary)', true)}
+                            <div style="height: 8px; border-left: 1px dashed var(--border-color);"></div>
+                            
+                            <!-- Rozbicie Asset Turnover -->
+                            <div style="display: flex; flex-direction: column; width: 100%; gap: 2px;">
+                                ${makeBox('Cash Turnover', generateTableHTML(cashTurn, dupontColumns), 'var(--text-primary)', true)}
+                                ${makeBox('A/R Turnover', generateTableHTML(arTurn, dupontColumns), 'var(--text-primary)', true)}
+                                ${makeBox('Inventory Turnover', generateTableHTML(invTurn, dupontColumns), 'var(--text-primary)', true)}
+                                ${makeBox('PPE Turnover', generateTableHTML(ppeTurn, dupontColumns), 'var(--text-primary)', true)}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Liniowe odcięcie sekcji dolnej -->
+                    <div style="width: 100%; border-top: 1px solid var(--border-color); margin: 8px 0;"></div>
+
+                    <!-- DOLNY RZĄD: Growth, WC, Leverage -->
+                    <div style="display: flex; width: 100%; gap: 6px; align-items: stretch; padding-bottom: 12px;">
+                        <div style="flex: 1; display: flex; flex-direction: column;">
+                            ${makeBox('Growth Analysis', generateTableHTML(grow, dupontColumns))}
+                        </div>
+                        <div style="flex: 1; display: flex; flex-direction: column;">
+                            ${makeBox('Working Capital Analysis', generateTableHTML(wc, dupontColumns))}
+                        </div>
+                        <div style="flex: 1; display: flex; flex-direction: column;">
+                            ${makeBox('Leverage Analysis', generateTableHTML(levBottom, dupontColumns))}
+                        </div>
+                    </div>
+
+                </div>
+            `;
+            return; // Przerwanie funkcji, aby nie renderować wykresów liniowych na dole dla tego widoku
+        }
 
         const renderChartButtons = (sectionKey: string, activeLabel: string, rows: any[]) => {
             return rows.map(r => `
